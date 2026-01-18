@@ -63,4 +63,6 @@ fastlane/test_output
 .claude/
 *.code-workspace
 Logo/
+build/
+*.zip
 .DS_Store
