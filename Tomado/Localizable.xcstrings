@@ -1,0 +1,306 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "alert.clearCompleted.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Completed Tasks" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "完了タスクを削除" } }
+      }
+    },
+    "alert.clearCompleted.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Are you sure you want to delete all completed tasks?" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "完了済みのタスクをすべて削除しますか？" } }
+      }
+    },
+    "alert.clearAll.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete All Tasks" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "すべてのタスクを削除" } }
+      }
+    },
+    "alert.clearAll.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Are you sure you want to delete all tasks?" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "すべてのタスクを削除しますか？" } }
+      }
+    },
+    "button.cancel" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "キャンセル" } }
+      }
+    },
+    "button.delete" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "削除" } }
+      }
+    },
+    "button.save" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "保存" } }
+      }
+    },
+    "button.makeIndependent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Make Independent Task" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "独立タスクにする" } }
+      }
+    },
+    "input.placeholder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter task... (Enter=!!, ⇧=!, ⌘=!!!)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タスクを入力... (Enter=!!, ⇧=!, ⌘=!!!)" } }
+      }
+    },
+    "empty.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No tasks" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タスクがありません" } }
+      }
+    },
+    "empty.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add a task from the input field above\nor press ⌘V to import" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "上の入力欄からタスクを追加\nまたは ⌘V でインポート" } }
+      }
+    },
+    "toast.skipped" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Skipped" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "スキップしました" } }
+      }
+    },
+    "toast.reset" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reset" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リセットしました" } }
+      }
+    },
+    "toast.completed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "完了しました" } }
+      }
+    },
+    "toast.postponed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Postponed" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "後回しにしました" } }
+      }
+    },
+    "toast.sortDescending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sorted by priority (High → Low)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "優先度順（高→低）" } }
+      }
+    },
+    "toast.sortAscending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sorted by priority (Low → High)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "優先度順（低→高）" } }
+      }
+    },
+    "toast.clearedCompleted" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deleted completed tasks" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "完了タスクを削除しました" } }
+      }
+    },
+    "toast.clearedAll" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deleted all tasks" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "すべて削除しました" } }
+      }
+    },
+    "toast.imported %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Imported %lld tasks" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%lld件インポートしました" } }
+      }
+    },
+    "toast.exported" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copied to clipboard" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "クリップボードにコピーしました" } }
+      }
+    },
+    "phase.work %lld %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Working (%lld/%lld)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "作業中 (%lld/%lld)" } }
+      }
+    },
+    "phase.break %lld %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Break (%lld/%lld)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "休憩 (%lld/%lld)" } }
+      }
+    },
+    "phase.longBreak" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Long Break" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "長い休憩" } }
+      }
+    },
+    "settings.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "設定" } }
+      }
+    },
+    "settings.shortcuts" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shortcuts" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ショートカット" } }
+      }
+    },
+    "settings.shortcuts.row1" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "⌘P Play  ⌘D Done  ⌘L Later  ⌘S Skip  ⌘R Reset" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "⌘P 再生  ⌘D 完了  ⌘L 後回し  ⌘S スキップ  ⌘R リセット" } }
+      }
+    },
+    "settings.shortcuts.row2" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "⌘⇧S Sort  ⌘⌫ Clear Done  ⌘⇧⌫ Clear All  ⌘V Import  ⌘C Export" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "⌘⇧S ソート  ⌘⌫ 完了削除  ⌘⇧⌫ 全削除  ⌘V 読込  ⌘C 書出" } }
+      }
+    },
+    "settings.shortcuts.row3" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter !! Add  ⇧Enter ! Add  ⌘Enter !!! Add" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "Enter !!追加  ⇧Enter !追加  ⌘Enter !!!追加" } }
+      }
+    },
+    "settings.timer" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Timer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タイマー" } }
+      }
+    },
+    "settings.work %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Work: %lld min" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "作業: %lld分" } }
+      }
+    },
+    "settings.break %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Break: %lld min" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "休憩: %lld分" } }
+      }
+    },
+    "settings.longBreak %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Long Break: %lld min" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "長い休憩: %lld分" } }
+      }
+    },
+    "settings.cycle %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cycles: %lld" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "サイクル: %lld" } }
+      }
+    },
+    "settings.sound" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sound" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "サウンド" } }
+      }
+    },
+    "settings.sound.enabled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enabled" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "有効" } }
+      }
+    },
+    "settings.sound.completion" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completion Sound" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "完了音" } }
+      }
+    },
+    "settings.sound.separateStart" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use separate start sound" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "開始音を別にする" } }
+      }
+    },
+    "settings.sound.start" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start Sound" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "開始音" } }
+      }
+    },
+    "settings.sound.volume" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Volume" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "音量" } }
+      }
+    },
+    "settings.import" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Import" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "インポート" } }
+      }
+    },
+    "settings.import.allowList" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Allow list format (- or 1.)" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リスト形式を許可 (- や 1.)" } }
+      }
+    },
+    "settings.import.allowList.help" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "When enabled, \"- text\" or \"1. text\" formats can also be imported" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ONにすると「- テキスト」や「1. テキスト」形式もインポート可能" } }
+      }
+    },
+    "settings.export" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Export" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "エクスポート" } }
+      }
+    },
+    "settings.export.indent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Indent" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "インデント" } }
+      }
+    },
+    "settings.export.spaces" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Spaces" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "スペース" } }
+      }
+    },
+    "settings.export.tab" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tab" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タブ" } }
+      }
+    },
+    "settings.export.spaceCount %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Space count: %lld" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "スペース数: %lld" } }
+      }
+    },
+    "settings.language" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Language" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "言語" } }
+      }
+    },
+    "settings.language.system" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "System" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "システム設定" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
