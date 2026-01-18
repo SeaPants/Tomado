@@ -1,0 +1,954 @@
+import SwiftUI
+
+struct FocusedMainView: View {
+    @ObservedObject var timer: PomodoroTimer
+    @ObservedObject var taskListVM: TaskListViewModel
+    @State private var newTaskText = ""
+    @State private var showSettings = false
+    @State private var showClearCompletedConfirm = false
+    @State private var showClearAllConfirm = false
+    @State private var dropTargetId: String?  // サブタスク化用
+    @State private var insertBeforeId: String?  // 割り込み挿入用
+    @State private var activePriority: Priority = .medium  // 現在ハイライト中の優先度
+    @State private var pressedButton: String?  // 押下中のボタンID
+    @State private var toastMessage: String?  // トースト通知
+    @State private var sortState: SortState = .unsorted  // ソート状態
+    @FocusState private var isInputFocused: Bool
+
+    enum SortState {
+        case unsorted  // 灰色
+        case descending  // 赤（高→低）
+        case ascending  // 青（低→高）
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 入力エリア
+            inputSection
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+            Divider()
+
+            // メインエリア（現在のタスク + タイマー）
+            if let currentTask = taskListVM.currentTask {
+                currentTaskSection(currentTask)
+            } else {
+                emptyStateView
+            }
+
+            Divider()
+
+            // 待機タスクリスト
+            taskListSection
+
+            Divider()
+
+            // フッター
+            footerSection
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+        }
+        .frame(minWidth: 300, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            isInputFocused = true
+            updateTimerTask()
+        }
+        .onChange(of: taskListVM.currentTask?.id) { _, _ in
+            updateTimerTask()
+        }
+        .onChange(of: taskListVM.taskList.tasks) { _, _ in
+            updateTimerTask()
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(timer: timer)
+        }
+        .alert(String(localized: "alert.clearCompleted.title"), isPresented: $showClearCompletedConfirm) {
+            Button(String(localized: "button.cancel"), role: .cancel) {}
+            Button(String(localized: "button.delete"), role: .destructive) {
+                taskListVM.clearCompleted()
+                showToast(String(localized: "toast.clearedCompleted"))
+            }
+            .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(String(localized: "alert.clearCompleted.message"))
+        }
+        .alert(String(localized: "alert.clearAll.title"), isPresented: $showClearAllConfirm) {
+            Button(String(localized: "button.cancel"), role: .cancel) {}
+            Button(String(localized: "button.delete"), role: .destructive) {
+                taskListVM.clearAll()
+                showToast(String(localized: "toast.clearedAll"))
+            }
+            .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(String(localized: "alert.clearAll.message"))
+        }
+        .overlay(alignment: .top) {
+            if let message = toastMessage {
+                Text(message)
+                    .font(.callout)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                    .shadow(radius: 4)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: toastMessage)
+    }
+
+    // MARK: - Input Section
+
+    private var inputSection: some View {
+        HStack(spacing: 8) {
+            TextField(String(localized: "input.placeholder"), text: $newTaskText)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .focused($isInputFocused)
+                .onSubmit {
+                    // デフォルトはEnterで中優先度
+                    addTask(priority: .medium)
+                }
+                .onKeyPress(.return, phases: .down) { event in
+                    guard !newTaskText.isEmpty else { return .ignored }
+                    // Shift+Enter = 低, Cmd+Enter = 高
+                    if event.modifiers.contains(.shift) {
+                        addTask(priority: .low)
+                        return .handled
+                    } else if event.modifiers.contains(.command) {
+                        addTask(priority: .high)
+                        return .handled
+                    }
+                    return .ignored  // 通常のEnterはonSubmitで処理
+                }
+
+            // 優先度ボタン
+            ModifierKeyAwarePriorityButtons(
+                activePriority: $activePriority,
+                onAdd: { priority in addTask(priority: priority) },
+                isDisabled: newTaskText.isEmpty,
+                colorFor: colorFor
+            )
+        }
+    }
+
+    private func addTask(priority: Priority) {
+        guard !newTaskText.isEmpty else { return }
+        taskListVM.addTask(title: newTaskText, priority: priority)
+        newTaskText = ""
+        sortState = .unsorted  // 手動追加でソート状態リセット
+    }
+
+    // MARK: - Current Task Section
+
+    private func currentTaskSection(_ task: TodoTask) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            // タスク名 + 優先度
+            HStack(spacing: 8) {
+                Text(task.priority.symbol)
+                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .foregroundColor(colorFor(task.priority))
+                Text(task.title)
+                    .font(.system(size: 20, weight: .medium))
+            }
+            .multilineTextAlignment(.center)
+            .lineLimit(3)
+            .padding(.horizontal, 24)
+
+            // タイマー
+            timerDisplay
+
+            // コントロール
+            controlButtons(task)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
+    private var timerDisplay: some View {
+        VStack(spacing: 4) {
+            Text(formatTime(timer.remainingSeconds))
+                .font(.system(size: 48, weight: .light, design: .monospaced))
+
+            Text(phaseText)
+                .font(.caption)
+                .foregroundColor(phaseColor)
+        }
+        .onTapGesture {
+            toggleTimer()
+        }
+    }
+
+    private func controlButtons(_ task: TodoTask) -> some View {
+        HStack(spacing: 20) {
+            // 後回しボタン
+            controlButton(
+                id: "postpone",
+                icon: "arrow.uturn.down.circle",
+                color: .orange,
+                action: postponeCurrentTask
+            )
+            .keyboardShortcut("l", modifiers: .command)
+
+            // 完了ボタン
+            controlButton(
+                id: "complete",
+                icon: "checkmark.circle",
+                color: .green,
+                action: completeCurrentTask
+            )
+            .keyboardShortcut("d", modifiers: .command)
+
+            // 再生/停止ボタン
+            controlButton(
+                id: "play",
+                icon: timer.isRunning ? "pause.circle.fill" : "play.circle.fill",
+                color: phaseColor,
+                size: 56,
+                action: toggleTimer
+            )
+            .keyboardShortcut("p", modifiers: .command)
+
+            // スキップボタン
+            controlButton(
+                id: "skip",
+                icon: "forward.circle",
+                color: .secondary,
+                action: {
+                    timer.skip()
+                    showToast(String(localized: "toast.skipped"))
+                }
+            )
+            .keyboardShortcut("s", modifiers: .command)
+
+            // リセットボタン
+            controlButton(
+                id: "reset",
+                icon: "arrow.counterclockwise.circle",
+                color: .secondary,
+                action: {
+                    timer.resetCycle()
+                    showToast(String(localized: "toast.reset"))
+                }
+            )
+            .keyboardShortcut("r", modifiers: .command)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func controlButton(
+        id: String,
+        icon: String,
+        color: Color,
+        size: CGFloat = 28,
+        action: @escaping () -> Void
+    ) -> some View {
+        let isPressed = pressedButton == id
+        return Button(action: {
+            flashButton(id)
+            action()
+        }) {
+            Image(systemName: icon)
+                .font(.system(size: size))
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(color)
+        .scaleEffect(isPressed ? 1.2 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private func flashButton(_ id: String) {
+        pressedButton = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            pressedButton = nil
+        }
+    }
+
+    private func showToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if toastMessage == message {
+                toastMessage = nil
+            }
+        }
+    }
+
+    private func sortButton() -> some View {
+        let isPressed = pressedButton == "sort"
+        let (icon, color): (String, Color) = switch sortState {
+        case .unsorted: ("arrow.up.arrow.down", .secondary)
+        case .descending: ("arrow.down", .red)
+        case .ascending: ("arrow.up", .blue)
+        }
+
+        return Button(action: {
+            flashButton("sort")
+            toggleSort()
+        }) {
+            Image(systemName: icon)
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(color)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private func toggleSort() {
+        switch sortState {
+        case .unsorted:
+            taskListVM.sort(ascending: false)
+            sortState = .descending
+            showToast(String(localized: "toast.sortDescending"))
+        case .descending:
+            taskListVM.sort(ascending: true)
+            sortState = .ascending
+            showToast(String(localized: "toast.sortAscending"))
+        case .ascending:
+            taskListVM.sort(ascending: false)
+            sortState = .descending
+            showToast(String(localized: "toast.sortDescending"))
+        }
+    }
+
+    private func resetSortState() {
+        sortState = .unsorted
+    }
+
+    private func footerButton(
+        id: String,
+        icon: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        let isPressed = pressedButton == id
+        return Button(action: {
+            flashButton(id)
+            action()
+        }) {
+            Image(systemName: icon)
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.secondary)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 48))
+                .foregroundColor(.green.opacity(0.5))
+            Text(String(localized: "empty.title"))
+                .font(.headline)
+                .foregroundColor(.secondary)
+            Text(String(localized: "empty.message"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
+    // MARK: - Task List Section
+
+    private var taskListSection: some View {
+        Group {
+            let hierarchyTasks = taskListVM.tasksInHierarchyOrder()
+            let currentTaskId = taskListVM.currentTask?.id
+            let ancestorIds = currentTaskId.map { taskListVM.getAncestorIds(for: $0) } ?? []
+
+            if !hierarchyTasks.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        // 階層順でタスクを表示（親→子）
+                        ForEach(Array(hierarchyTasks.enumerated()), id: \.element.id) { index, task in
+                            let isCurrent = task.id == currentTaskId
+                            let ancestorIndex = ancestorIds.firstIndex(of: task.id)
+
+                            VStack(spacing: 0) {
+                                // 挿入ライン（ドロップターゲット）
+                                insertLine(beforeTaskId: task.id)
+
+                                // タスク行
+                                taskRow(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(taskRowBackground(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex))
+                            }
+                        }
+
+                        // 完了タスク
+                        let completedTasks = taskListVM.taskList.tasks.filter { $0.isCompleted }
+                        if !completedTasks.isEmpty {
+                            Divider().padding(.vertical, 8)
+                            ForEach(completedTasks) { task in
+                                completedTaskRow(task)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else if taskListVM.taskList.tasks.isEmpty {
+                Color.clear.frame(height: 100)
+            } else {
+                Color.clear.frame(height: 50)
+            }
+        }
+    }
+
+    /// 挿入ライン（D&Dで割り込み挿入用）
+    private func insertLine(beforeTaskId: String) -> some View {
+        Rectangle()
+            .fill(insertBeforeId == beforeTaskId ? Color.accentColor : Color.clear)
+            .frame(height: insertBeforeId == beforeTaskId ? 3 : 1)
+            .contentShape(Rectangle().size(width: .infinity, height: 12))  // タッチ領域は広めに
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let droppedId = droppedIds.first,
+                      droppedId != beforeTaskId else { return false }
+                taskListVM.insertTask(droppedId, before: beforeTaskId)
+                sortState = .unsorted
+                return true
+            } isTargeted: { isTargeted in
+                insertBeforeId = isTargeted ? beforeTaskId : nil
+            }
+    }
+
+    /// タスク行の背景色を決定
+    private func taskRowBackground(_ task: TodoTask, isCurrent: Bool, ancestorIndex: Int?) -> Color {
+        if dropTargetId == task.id {
+            return Color.accentColor.opacity(0.2)
+        }
+        if isCurrent {
+            return phaseColor.opacity(0.15)
+        }
+        if let index = ancestorIndex {
+            // 祖先の濃さ：近い親ほど濃い（index 0 = 直近の親）
+            let opacity = 0.12 - Double(index) * 0.03
+            return phaseColor.opacity(max(opacity, 0.03))
+        }
+        return Color.clear
+    }
+
+    private func taskRow(_ task: TodoTask, isCurrent: Bool = false, ancestorIndex: Int? = nil) -> some View {
+        HStack(spacing: 6) {
+            // プレイマーク（現在のタスク）
+            if isCurrent {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(phaseColor)
+            }
+
+            // インデント
+            if task.indentLevel > 0 {
+                HStack(spacing: 0) {
+                    ForEach(0..<task.indentLevel, id: \.self) { level in
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(width: 2, height: 16)
+                            .padding(.horizontal, 6)
+                    }
+                }
+            }
+
+            // タスク名
+            Text(task.title)
+                .font(task.isRoot ? .body : .callout)
+                .foregroundColor(task.isRoot || isCurrent ? .primary : .secondary)
+                .fontWeight(isCurrent ? .medium : .regular)
+                .lineLimit(1)
+
+            Spacer()
+
+            if task.pomodoros > 0 {
+                Text("\(task.pomodoros)🍅")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            // サブタスク解除ボタン
+            if !task.isRoot {
+                Button(action: { taskListVM.makeRootTask(taskId: task.id) }) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // ルートタスク：優先度セレクタ（右端）
+            if task.isRoot {
+                prioritySelector(for: task)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // タップでそのタスクを選択（再生開始）
+            taskListVM.selectTask(id: task.id)
+        }
+        .draggable(task.id) {
+            Text(task.title)
+                .padding(8)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(6)
+        }
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let droppedId = droppedIds.first,
+                  droppedId != task.id else { return false }
+            // タスク上にドロップ → サブタスク化
+            taskListVM.makeSubtask(taskId: droppedId, parentId: task.id)
+            sortState = .unsorted
+            return true
+        } isTargeted: { isTargeted in
+            dropTargetId = isTargeted ? task.id : nil
+        }
+        .contextMenu {
+            if !task.isRoot {
+                Button(String(localized: "button.makeIndependent")) {
+                    taskListVM.makeRootTask(taskId: task.id)
+                    sortState = .unsorted
+                }
+                Divider()
+            }
+            Button(String(localized: "button.delete"), role: .destructive) { taskListVM.deleteTask(id: task.id) }
+        }
+    }
+
+    /// 優先度セレクタ（3つの独立ボタン）
+    private func prioritySelector(for task: TodoTask) -> some View {
+        HStack(spacing: 2) {
+            ForEach([Priority.low, .medium, .high], id: \.self) { priority in
+                Button(action: { setPriority(task, priority) }) {
+                    Text(priority.symbol)
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(task.priority == priority ? colorFor(priority) : .secondary.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// 優先度を設定（表示順は変えない）
+    private func setPriority(_ task: TodoTask, _ priority: Priority) {
+        if let index = taskListVM.taskList.tasks.firstIndex(where: { $0.id == task.id }) {
+            taskListVM.taskList.tasks[index].priority = priority
+        }
+    }
+
+    private func completedTaskRow(_ task: TodoTask) -> some View {
+        HStack(spacing: 4) {
+            // インデント表示（サブタスクの場合）
+            if task.indentLevel > 0 {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: CGFloat(task.indentLevel * 16))
+            }
+
+            Image(systemName: "checkmark")
+                .font(.caption)
+                .foregroundColor(.green)
+
+            Text(task.title)
+                .font(.body)
+                .strikethrough()
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            Spacer()
+
+            if task.pomodoros > 0 {
+                Text("\(task.pomodoros)🍅")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .contextMenu {
+            Button(String(localized: "button.delete"), role: .destructive) { taskListVM.deleteTask(id: task.id) }
+        }
+    }
+
+    // MARK: - Footer Section
+
+    private var footerSection: some View {
+        HStack(spacing: 12) {
+            let stats = taskListVM.taskList.stats
+            Text("\(stats.completed)/\(stats.total)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if stats.pomodoros > 0 {
+                Text("・\(stats.pomodoros)🍅")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            // ソート (⌘⇧S)
+            sortButton()
+                .disabled(taskListVM.taskList.tasks.isEmpty)
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+            // 完了削除（クリック時はダイアログ）
+            footerButton(id: "clearCompleted", icon: "checkmark.circle.badge.xmark") {
+                showClearCompletedConfirm = true
+            }
+            .disabled(taskListVM.taskList.tasks.filter { $0.isCompleted }.isEmpty)
+            .keyboardShortcut(.delete, modifiers: .command)
+
+            // 全削除（クリック時はダイアログ）
+            footerButton(id: "clearAll", icon: "trash") {
+                showClearAllConfirm = true
+            }
+            .disabled(taskListVM.taskList.tasks.isEmpty)
+            .keyboardShortcut(.delete, modifiers: [.command, .shift])
+
+            // インポート (⌘V)
+            footerButton(id: "import", icon: "square.and.arrow.down") {
+                let count = taskListVM.importFromClipboard()
+                if count > 0 {
+                    showToast(String(localized: "toast.imported \(count)"))
+                }
+            }
+            .keyboardShortcut("v", modifiers: .command)
+
+            // エクスポート (⌘C)
+            footerButton(id: "export", icon: "square.and.arrow.up") {
+                taskListVM.exportToClipboard()
+                showToast(String(localized: "toast.exported"))
+            }
+            .disabled(taskListVM.taskList.tasks.isEmpty)
+            .keyboardShortcut("c", modifiers: .command)
+
+            // 設定
+            footerButton(id: "settings", icon: "gear") {
+                showSettings = true
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func toggleTimer() {
+        if timer.isRunning {
+            timer.pause()
+        } else {
+            timer.start()
+        }
+    }
+
+    private func completeCurrentTask() {
+        if let task = taskListVM.currentTask {
+            taskListVM.completeTask(id: task.id)
+            showToast(String(localized: "toast.completed"))
+        }
+    }
+
+    private func postponeCurrentTask() {
+        taskListVM.postponeCurrentTask()
+        showToast(String(localized: "toast.postponed"))
+    }
+
+    private func updateTimerTask() {
+        if let task = taskListVM.currentTask {
+            timer.setCurrentTask(task)
+        } else {
+            timer.setCurrentTask(nil)
+            // タスクがなくなったらタイマー停止（ポモドーロは継続）
+            if timer.isRunning {
+                timer.pause()
+            }
+        }
+    }
+
+    private func formatTime(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%02d:%02d", mins, secs)
+    }
+
+    private var phaseText: String {
+        let cycle = timer.sessionPomodoros + 1
+        let total = timer.pomodorosUntilLongBreak
+        switch timer.currentPhase {
+        case .work: return String(localized: "phase.work \(cycle) \(total)")
+        case .break_: return String(localized: "phase.break \(cycle) \(total)")
+        case .longBreak: return String(localized: "phase.longBreak")
+        }
+    }
+
+    private var phaseColor: Color {
+        switch timer.currentPhase {
+        case .work: return .blue
+        case .break_: return .green
+        case .longBreak: return .purple
+        }
+    }
+
+    private func colorFor(_ priority: Priority) -> Color {
+        switch priority {
+        case .low: return .gray
+        case .medium: return .blue
+        case .high: return .red
+        }
+    }
+}
+
+// MARK: - Settings View
+
+struct SettingsView: View {
+    @ObservedObject var timer: PomodoroTimer
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var workMinutes: Int
+    @State private var breakMinutes: Int
+    @State private var longBreakMinutes: Int
+    @State private var cycleCount: Int
+    @State private var soundEnabled: Bool
+    @State private var completionSound: String
+    @State private var startSound: String
+    @State private var separateStartEndSounds: Bool
+    @State private var soundVolume: Double
+
+    // インポート/エクスポート設定
+    @AppStorage("importAllowListFormat") private var importAllowListFormat: Bool = false
+    @AppStorage("indentStyle") private var indentStyle: String = "spaces"
+    @AppStorage("indentSpaces") private var indentSpaces: Int = 2
+
+    // 言語設定
+    @AppStorage("appLanguage") private var appLanguage: String = "system"
+
+    init(timer: PomodoroTimer) {
+        self.timer = timer
+        _workMinutes = State(initialValue: timer.workDuration / 60)
+        _breakMinutes = State(initialValue: timer.breakDuration / 60)
+        _longBreakMinutes = State(initialValue: timer.longBreakDuration / 60)
+        _cycleCount = State(initialValue: timer.pomodorosUntilLongBreak)
+        _soundEnabled = State(initialValue: timer.soundEnabled)
+        _completionSound = State(initialValue: timer.completionSound)
+        _startSound = State(initialValue: timer.startSound)
+        _separateStartEndSounds = State(initialValue: timer.separateStartEndSounds)
+        _soundVolume = State(initialValue: timer.soundVolume)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(String(localized: "settings.title"))
+                .font(.headline)
+
+            Form {
+                Section(String(localized: "settings.shortcuts")) {
+                    Text(String(localized: "settings.shortcuts.row1"))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    Text(String(localized: "settings.shortcuts.row2"))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    Text(String(localized: "settings.shortcuts.row3"))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+
+                Section(String(localized: "settings.timer")) {
+                    Stepper(String(localized: "settings.work \(workMinutes)"), value: $workMinutes, in: 1...60)
+                    Stepper(String(localized: "settings.break \(breakMinutes)"), value: $breakMinutes, in: 1...30)
+                    Stepper(String(localized: "settings.longBreak \(longBreakMinutes)"), value: $longBreakMinutes, in: 1...60)
+                    Stepper(String(localized: "settings.cycle \(cycleCount)"), value: $cycleCount, in: 1...10)
+                }
+
+                Section(String(localized: "settings.sound")) {
+                    Toggle(String(localized: "settings.sound.enabled"), isOn: $soundEnabled)
+
+                    if soundEnabled {
+                        HStack {
+                            Picker(String(localized: "settings.sound.completion"), selection: $completionSound) {
+                                ForEach(timer.availableSounds, id: \.self) { sound in
+                                    Text(sound).tag(sound)
+                                }
+                            }
+                            Button("▶") {
+                                timer.soundVolume = soundVolume
+                                playSound(completionSound)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Toggle(String(localized: "settings.sound.separateStart"), isOn: $separateStartEndSounds)
+
+                        if separateStartEndSounds {
+                            HStack {
+                                Picker(String(localized: "settings.sound.start"), selection: $startSound) {
+                                    ForEach(timer.availableSounds, id: \.self) { sound in
+                                        Text(sound).tag(sound)
+                                    }
+                                }
+                                Button("▶") {
+                                    timer.soundVolume = soundVolume
+                                    playSound(startSound)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+
+                        HStack {
+                            Text(String(localized: "settings.sound.volume"))
+                            Slider(value: $soundVolume, in: 0...1)
+                        }
+                    }
+                }
+
+                Section(String(localized: "settings.import")) {
+                    Toggle(String(localized: "settings.import.allowList"), isOn: $importAllowListFormat)
+                        .help(String(localized: "settings.import.allowList.help"))
+                }
+
+                Section(String(localized: "settings.export")) {
+                    Picker(String(localized: "settings.export.indent"), selection: $indentStyle) {
+                        Text(String(localized: "settings.export.spaces")).tag("spaces")
+                        Text(String(localized: "settings.export.tab")).tag("tab")
+                    }
+                    .pickerStyle(.segmented)
+
+                    if indentStyle == "spaces" {
+                        Stepper(String(localized: "settings.export.spaceCount \(indentSpaces)"), value: $indentSpaces, in: 1...8)
+                    }
+                }
+
+                Section(String(localized: "settings.language")) {
+                    Picker(String(localized: "settings.language"), selection: $appLanguage) {
+                        Text(String(localized: "settings.language.system")).tag("system")
+                        Text("English").tag("en")
+                        Text("日本語").tag("ja")
+                    }
+                    .onChange(of: appLanguage) { _, newValue in
+                        applyLanguage(newValue)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Button(String(localized: "button.cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(String(localized: "button.save")) {
+                    save()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal)
+        }
+        .padding()
+        .frame(width: 340, height: 520)
+    }
+
+    private func save() {
+        timer.updateSettings(
+            workMinutes: workMinutes,
+            breakMinutes: breakMinutes,
+            longBreakMinutes: longBreakMinutes,
+            pomodorosUntilLongBreak: cycleCount
+        )
+        timer.soundEnabled = soundEnabled
+        timer.completionSound = completionSound
+        timer.startSound = startSound
+        timer.separateStartEndSounds = separateStartEndSounds
+        timer.soundVolume = soundVolume
+    }
+
+    private func playSound(_ soundName: String) {
+        if let sound = NSSound(named: soundName) {
+            sound.volume = Float(soundVolume)
+            sound.play()
+        }
+    }
+
+    private func applyLanguage(_ language: String) {
+        if language == "system" {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([language], forKey: "AppleLanguages")
+        }
+    }
+}
+
+// MARK: - Modifier Key Aware Priority Buttons
+
+struct ModifierKeyAwarePriorityButtons: View {
+    @Binding var activePriority: Priority
+    let onAdd: (Priority) -> Void
+    let isDisabled: Bool
+    let colorFor: (Priority) -> Color
+
+    @StateObject private var monitor = ModifierKeyMonitor()
+
+    var body: some View {
+        HStack(spacing: 4) {
+            priorityButton(.low, "!")
+            priorityButton(.medium, "!!")
+            priorityButton(.high, "!!!")
+        }
+        .onChange(of: monitor.currentPriority) { _, newValue in
+            activePriority = newValue
+        }
+    }
+
+    private func priorityButton(_ priority: Priority, _ label: String) -> some View {
+        let isActive = priority == activePriority
+        return Button(action: { onAdd(priority) }) {
+            Text(label)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(isActive ? colorFor(priority) : colorFor(priority).opacity(0.4))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(isActive ? colorFor(priority).opacity(0.25) : colorFor(priority).opacity(0.08))
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+}
+
+/// 修飾キーを監視するクラス
+class ModifierKeyMonitor: ObservableObject {
+    @Published var currentPriority: Priority = .medium
+    private var monitor: Any?
+
+    init() {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.updateFromModifiers(event.modifierFlags)
+            return event
+        }
+    }
+
+    deinit {
+        if let monitor = monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    private func updateFromModifiers(_ flags: NSEvent.ModifierFlags) {
+        DispatchQueue.main.async { [weak self] in
+            if flags.contains(.command) {
+                self?.currentPriority = .high
+            } else if flags.contains(.shift) {
+                self?.currentPriority = .low
+            } else {
+                self?.currentPriority = .medium
+            }
+        }
+    }
+}
