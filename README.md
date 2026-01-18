@@ -23,9 +23,9 @@ A minimalist Pomodoro timer with task management for macOS.
 - **Import/Export**: Copy tasks from/to clipboard with indentation support
 - **Localization**: English and Japanese support
 
-## Screenshots
+## Screenshot
 
-<!-- TODO: Add screenshots -->
+![Tomado](docs/screenshot.png)
 
 ## Keyboard Shortcuts
 
@@ -131,7 +131,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 
 ## スクリーンショット
 
-<!-- TODO: スクリーンショットを追加 -->
+![Tomado](docs/screenshot.png)
 
 ## キーボードショートカット
 
