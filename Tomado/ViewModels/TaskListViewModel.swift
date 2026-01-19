@@ -64,29 +64,32 @@ public class TaskListViewModel: ObservableObject {
     public func completeTask(id: String) {
         // サブタスクを先に完了
         let subtaskIds = getSubtaskIds(for: id)
+        var updatedTasks = taskList.tasks
+
         for subtaskId in subtaskIds {
-            if let index = taskList.tasks.firstIndex(where: { $0.id == subtaskId }) {
-                taskList.tasks[index].complete()
+            if let index = updatedTasks.firstIndex(where: { $0.id == subtaskId }) {
+                updatedTasks[index].isCompleted = true
             }
         }
 
         // 本タスクを完了
-        if let index = taskList.tasks.firstIndex(where: { $0.id == id }) {
-            taskList.tasks[index].complete()
+        if let index = updatedTasks.firstIndex(where: { $0.id == id }) {
+            updatedTasks[index].isCompleted = true
         }
 
         // 完了タスクを末尾に移動
         let completedIds = Set([id] + subtaskIds)
-        let completedTasks = taskList.tasks.filter { completedIds.contains($0.id) }
-        taskList.tasks.removeAll { completedIds.contains($0.id) }
-        taskList.tasks.append(contentsOf: completedTasks)
+        let completedTasks = updatedTasks.filter { completedIds.contains($0.id) }
+        updatedTasks.removeAll { completedIds.contains($0.id) }
+        updatedTasks.append(contentsOf: completedTasks)
 
         // 完了したタスクが選択中だったら選択をクリア
         if completedIds.contains(currentTaskId ?? "") {
             currentTaskId = nil
         }
 
-        taskList.lastModified = Date()
+        // 一度に更新して確実に通知（structなので代入で通知される）
+        taskList = TaskList(tasks: updatedTasks, lastModified: Date())
         save()
     }
 

@@ -392,10 +392,11 @@ struct FocusedMainView: View {
                         let completedTasks = taskListVM.taskList.tasks.filter { $0.isCompleted }
                         if !completedTasks.isEmpty {
                             Divider().padding(.vertical, 8)
-                            ForEach(completedTasks) { task in
+                            ForEach(completedTasks, id: \.id) { task in
                                 completedTaskRow(task)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 4)
+                                    .id("completed-\(task.id)")  // 未完了リストと異なるIDを使用
                             }
                         }
                     }
