@@ -19,6 +19,7 @@ A minimalist Pomodoro timer with task management for macOS.
 - **Pomodoro Timer**: Work sessions, short breaks, and long breaks with customizable durations
 - **Task Management**: Simple task list with priority levels (!, !!, !!!)
 - **Subtasks**: Organize tasks hierarchically with drag & drop
+- **View Modes**: Toggle between separated view and hierarchy view
 - **Keyboard-First**: Comprehensive keyboard shortcuts for all actions
 - **Import/Export**: Copy tasks from/to clipboard with indentation support
 - **Localization**: English and Japanese support
@@ -37,6 +38,7 @@ A minimalist Pomodoro timer with task management for macOS.
 | ⌘S | Skip current phase |
 | ⌘R | Reset cycle |
 | ⌘⇧S | Sort by priority |
+| ⌘⇧V | Toggle view mode |
 | ⌘⌫ | Delete completed tasks |
 | ⌘⇧⌫ | Delete all tasks |
 | ⌘V | Import from clipboard |
@@ -125,6 +127,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 - **ポモドーロタイマー**: 作業・短い休憩・長い休憩のカスタマイズ可能なタイマー
 - **タスク管理**: 優先度付き（!, !!, !!!）のシンプルなタスクリスト
 - **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理
+- **ビューモード**: 分離ビューと階層ビューを切り替え
 - **キーボード操作**: すべての操作にショートカットキー対応
 - **インポート/エクスポート**: クリップボード経由でタスクをコピー（インデント対応）
 - **多言語対応**: 英語・日本語に対応
@@ -143,6 +146,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 | ⌘S | フェーズをスキップ |
 | ⌘R | サイクルをリセット |
 | ⌘⇧S | 優先度順にソート |
+| ⌘⇧V | ビューモード切替 |
 | ⌘⌫ | 完了タスクを削除 |
 | ⌘⇧⌫ | すべてのタスクを削除 |
 | ⌘V | クリップボードからインポート |
