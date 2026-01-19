@@ -13,12 +13,18 @@ struct FocusedMainView: View {
     @State private var pressedButton: String?  // 押下中のボタンID
     @State private var toastMessage: String?  // トースト通知
     @State private var sortState: SortState = .unsorted  // ソート状態
+    @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
     @FocusState private var isInputFocused: Bool
 
     enum SortState {
         case unsorted  // 灰色
         case descending  // 赤（高→低）
         case ascending  // 青（低→高）
+    }
+
+    enum ViewMode: String {
+        case separated   // 分離ビュー（未完了/完了で分ける）
+        case hierarchy   // 階層ビュー（階層を維持）
     }
 
     var body: some View {
@@ -322,6 +328,37 @@ struct FocusedMainView: View {
         sortState = .unsorted
     }
 
+    private func viewModeButton() -> some View {
+        let isPressed = pressedButton == "viewMode"
+        let (icon, color): (String, Color) = switch viewMode {
+        case .separated: ("rectangle.split.2x1", .secondary)
+        case .hierarchy: ("list.bullet.indent", .accentColor)
+        }
+
+        return Button(action: {
+            flashButton("viewMode")
+            toggleViewMode()
+        }) {
+            Image(systemName: icon)
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(color)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private func toggleViewMode() {
+        switch viewMode {
+        case .separated:
+            viewMode = .hierarchy
+            showToast(String(localized: "toast.viewHierarchy"))
+        case .hierarchy:
+            viewMode = .separated
+            showToast(String(localized: "toast.viewSeparated"))
+        }
+    }
+
     private func footerButton(
         id: String,
         icon: String,
@@ -364,6 +401,18 @@ struct FocusedMainView: View {
 
     private var taskListSection: some View {
         Group {
+            switch viewMode {
+            case .separated:
+                separatedTaskListView
+            case .hierarchy:
+                hierarchyTaskListView
+            }
+        }
+    }
+
+    /// 分離ビュー：未完了タスク → 完了タスク
+    private var separatedTaskListView: some View {
+        Group {
             let hierarchyTasks = taskListVM.tasksInHierarchyOrder()
             let currentTaskId = taskListVM.currentTask?.id
             let ancestorIds = currentTaskId.map { taskListVM.getAncestorIds(for: $0) } ?? []
@@ -372,7 +421,7 @@ struct FocusedMainView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         // 階層順でタスクを表示（親→子）
-                        ForEach(Array(hierarchyTasks.enumerated()), id: \.element.id) { index, task in
+                        ForEach(Array(hierarchyTasks.enumerated()), id: \.element.id) { _, task in
                             let isCurrent = task.id == currentTaskId
                             let ancestorIndex = ancestorIds.firstIndex(of: task.id)
 
@@ -396,7 +445,7 @@ struct FocusedMainView: View {
                                 completedTaskRow(task)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 4)
-                                    .id("completed-\(task.id)")  // 未完了リストと異なるIDを使用
+                                    .id("completed-\(task.id)")
                             }
                         }
                     }
@@ -406,6 +455,87 @@ struct FocusedMainView: View {
                 Color.clear.frame(height: 100)
             } else {
                 Color.clear.frame(height: 50)
+            }
+        }
+    }
+
+    /// 階層ビュー：完了/未完了を混合して階層を維持
+    private var hierarchyTaskListView: some View {
+        Group {
+            let allTasksInHierarchy = taskListVM.allTasksInHierarchyOrder()
+            let currentTaskId = taskListVM.currentTask?.id
+            let ancestorIds = currentTaskId.map { taskListVM.getAncestorIds(for: $0) } ?? []
+
+            if !allTasksInHierarchy.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(allTasksInHierarchy.enumerated()), id: \.element.id) { _, task in
+                            let isCurrent = task.id == currentTaskId
+                            let ancestorIndex = ancestorIds.firstIndex(of: task.id)
+
+                            VStack(spacing: 0) {
+                                if !task.isCompleted {
+                                    insertLine(beforeTaskId: task.id)
+                                }
+
+                                if task.isCompleted {
+                                    // 完了タスク（階層ビュー用：インデント維持）
+                                    hierarchyCompletedTaskRow(task)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 4)
+                                        .id("hierarchy-\(task.id)")
+                                } else {
+                                    // 未完了タスク
+                                    taskRow(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(taskRowBackground(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex))
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else {
+                Color.clear.frame(height: 100)
+            }
+        }
+    }
+
+    /// 階層ビュー用の完了タスク行（インデント維持、打ち消し線）
+    private func hierarchyCompletedTaskRow(_ task: TodoTask) -> some View {
+        HStack(spacing: 4) {
+            // インデント
+            if task.indentLevel > 0 {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: CGFloat(task.indentLevel * 16))
+            }
+
+            Image(systemName: "checkmark")
+                .font(.caption)
+                .foregroundColor(.green.opacity(0.6))
+
+            Text(task.title)
+                .font(.body)
+                .strikethrough()
+                .foregroundColor(.secondary.opacity(0.5))
+                .lineLimit(1)
+
+            Spacer()
+
+            if task.pomodoros > 0 {
+                Text("\(task.pomodoros)🍅")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+        }
+        .contextMenu {
+            Button(String(localized: "button.uncomplete")) {
+                taskListVM.uncompleteTask(id: task.id)
+            }
+            Button(String(localized: "button.delete"), role: .destructive) {
+                taskListVM.deleteTask(id: task.id)
             }
         }
     }
@@ -549,9 +679,27 @@ struct FocusedMainView: View {
     }
 
     private func completedTaskRow(_ task: TodoTask) -> some View {
-        HStack(spacing: 4) {
-            // インデント表示（サブタスクの場合）
-            if task.indentLevel > 0 {
+        // 祖先のタイトルと完了状態を取得（ルートから順に）
+        let ancestorInfo: [(title: String, isCompleted: Bool)] = {
+            let ancestorIds = taskListVM.getAncestorIds(for: task.id) // 近い順
+            var info: [(String, Bool)] = []
+            for ancestorId in ancestorIds.reversed() { // ルートから順に
+                if let ancestor = taskListVM.taskList.tasks.first(where: { $0.id == ancestorId }) {
+                    info.append((ancestor.title, ancestor.isCompleted))
+                }
+            }
+            return info
+        }()
+
+        // 未完了の祖先が1つでもいれば、祖先チェーンを表示
+        let hasIncompleteAncestor = ancestorInfo.contains { !$0.isCompleted }
+
+        // 全ての祖先が完了している場合はインデント表示
+        let showIndent = task.indentLevel > 0 && !hasIncompleteAncestor
+
+        return HStack(spacing: 4) {
+            // インデント（全祖先が完了している場合）
+            if showIndent {
                 Rectangle()
                     .fill(Color.clear)
                     .frame(width: CGFloat(task.indentLevel * 16))
@@ -560,6 +708,20 @@ struct FocusedMainView: View {
             Image(systemName: "checkmark")
                 .font(.caption)
                 .foregroundColor(.green)
+
+            // 未完了の祖先がある場合：全祖先を表示（完了済み祖先は打ち消し線）
+            if hasIncompleteAncestor {
+                ForEach(Array(ancestorInfo.enumerated()), id: \.offset) { _, info in
+                    Text(info.title)
+                        .font(.body)
+                        .strikethrough(info.isCompleted)
+                        .foregroundColor(.secondary.opacity(info.isCompleted ? 0.4 : 0.6))
+                        .lineLimit(1)
+                    Text(">")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.4))
+                }
+            }
 
             Text(task.title)
                 .font(.body)
@@ -576,7 +738,12 @@ struct FocusedMainView: View {
             }
         }
         .contextMenu {
-            Button(String(localized: "button.delete"), role: .destructive) { taskListVM.deleteTask(id: task.id) }
+            Button(String(localized: "button.uncomplete")) {
+                taskListVM.uncompleteTask(id: task.id)
+            }
+            Button(String(localized: "button.delete"), role: .destructive) {
+                taskListVM.deleteTask(id: task.id)
+            }
         }
     }
 
@@ -596,6 +763,10 @@ struct FocusedMainView: View {
             }
 
             Spacer()
+
+            // ビューモード切替 (⌘⇧V)
+            viewModeButton()
+                .keyboardShortcut("v", modifiers: [.command, .shift])
 
             // ソート (⌘⇧S)
             sortButton()

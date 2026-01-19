@@ -116,6 +116,22 @@
         }
       }
     },
+    "button.uncomplete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as Incomplete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了に戻す"
+          }
+        }
+      }
+    },
     "button.makeIndependent" : {
       "localizations" : {
         "en" : {
@@ -819,6 +835,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "優先度順（高→低）"
+          }
+        }
+      }
+    },
+    "toast.viewHierarchy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hierarchy view"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "階層ビュー"
+          }
+        }
+      }
+    },
+    "toast.viewSeparated" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Separated view"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分離ビュー"
           }
         }
       }

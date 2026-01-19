@@ -93,6 +93,30 @@ public class TaskListViewModel: ObservableObject {
         save()
     }
 
+    /// タスクを未完了に戻す（親タスクも一緒に未完了にする）
+    public func uncompleteTask(id: String) {
+        var updatedTasks = taskList.tasks
+
+        // 対象タスクと全ての祖先を未完了に
+        let ancestorIds = getAncestorIds(for: id)
+        let idsToUncomplete = Set([id] + ancestorIds)
+
+        for taskId in idsToUncomplete {
+            if let index = updatedTasks.firstIndex(where: { $0.id == taskId }) {
+                updatedTasks[index].isCompleted = false
+            }
+        }
+
+        // 未完了に戻したタスクを未完了リストの末尾に移動
+        let uncompletedTasks = updatedTasks.filter { idsToUncomplete.contains($0.id) }
+        updatedTasks.removeAll { idsToUncomplete.contains($0.id) }
+        let insertIndex = updatedTasks.firstIndex { $0.isCompleted } ?? updatedTasks.count
+        updatedTasks.insert(contentsOf: uncompletedTasks, at: insertIndex)
+
+        taskList = TaskList(tasks: updatedTasks, lastModified: Date())
+        save()
+    }
+
     /// 指定タスクのサブタスクIDを再帰的に取得
     private func getSubtaskIds(for parentId: String) -> [String] {
         var result: [String] = []
@@ -194,7 +218,7 @@ public class TaskListViewModel: ObservableObject {
         }
     }
 
-    /// 階層順（親→子）でタスクを取得
+    /// 階層順（親→子）で未完了タスクを取得
     public func tasksInHierarchyOrder() -> [TodoTask] {
         var result: [TodoTask] = []
         let incompleteRoots = taskList.tasks.filter { $0.isRoot && !$0.isCompleted }
@@ -208,6 +232,26 @@ public class TaskListViewModel: ObservableObject {
         }
 
         for root in incompleteRoots {
+            addWithChildren(root)
+        }
+
+        return result
+    }
+
+    /// 階層順（親→子）で全タスク（完了/未完了混合）を取得
+    public func allTasksInHierarchyOrder() -> [TodoTask] {
+        var result: [TodoTask] = []
+        let roots = taskList.tasks.filter { $0.isRoot }
+
+        func addWithChildren(_ task: TodoTask) {
+            result.append(task)
+            let children = taskList.tasks.filter { $0.parentId == task.id }
+            for child in children {
+                addWithChildren(child)
+            }
+        }
+
+        for root in roots {
             addWithChildren(root)
         }
 
