@@ -631,6 +631,38 @@
         }
       }
     },
+    "settings.shortFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Short Focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ショートフォーカス"
+          }
+        }
+      }
+    },
+    "settings.deepFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deep Focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディープフォーカス"
+          }
+        }
+      }
+    },
     "settings.timer" : {
       "localizations" : {
         "en" : {
@@ -867,6 +899,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分離ビュー"
+          }
+        }
+      }
+    },
+    "toast.shortFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Short Focus (12 min)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "短集中（12分）"
+          }
+        }
+      }
+    },
+    "toast.deepFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deep Focus (35 min)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "深集中（35分）"
+          }
+        }
+      }
+    },
+    "toast.topmostOn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always on top"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最前面固定"
+          }
+        }
+      }
+    },
+    "toast.topmostOff" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal window"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通常ウィンドウ"
           }
         }
       }

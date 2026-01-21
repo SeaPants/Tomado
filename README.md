@@ -10,6 +10,7 @@ A minimalist Pomodoro timer with task management for macOS.
 
 - **Single-window simplicity**: Everything you need is visible at a glance
 - **Keyboard-first**: Every action has a shortcut for flow state
+- **Research-based**: Timer presets grounded in cognitive science
 - **Hierarchical tasks**: Break down work naturally with subtasks
 - **Priority-driven**: Three levels (!, !!, !!!) keep decisions simple
 - **Local-first**: Your data stays on your machine
@@ -39,6 +40,8 @@ A minimalist Pomodoro timer with task management for macOS.
 | ⌘R | Reset cycle |
 | ⌘⇧S | Sort by priority |
 | ⌘⇧V | Toggle view mode |
+| ⌘⇧T | Toggle timer preset |
+| ⌘⇧P | Toggle topmost |
 | ⌘⌫ | Delete completed tasks |
 | ⌘⇧⌫ | Delete all tasks |
 | ⌘V | Import from clipboard |
@@ -52,6 +55,25 @@ A minimalist Pomodoro timer with task management for macOS.
 - `!` Low priority (gray)
 - `!!` Medium priority (blue) - default
 - `!!!` High priority (red)
+
+## Timer Presets
+
+This app offers two timer presets inspired by some research on effort regulation and structured break-taking.
+
+### 🐇 Short Focus Mode (12 min + 3 min break)
+
+Research suggests that people naturally tend to switch tasks approximately every 12 minutes (González & Mark, 2004; Mark et al., 2005). Biwer et al. (2023) compared short systematic breaks (12 min work / 3 min break), long systematic breaks (24 min work / 6 min break), and self-regulated breaks. Both systematic conditions reduced fatigue and improved concentration compared to self-regulated breaks. Notably, the short-interval condition showed favorable trends over the long-interval condition across most indicators, suggesting potential benefits of aligning break timing with natural task-switching rhythms.
+
+### 🐢 Deep Focus Mode (35 min + 10 min break)
+
+For cognitively demanding tasks requiring sustained attention, Ogut (2025) reviewed the literature on the Pomodoro Technique and proposed extended intervals of 35 minutes of focused work followed by 10-minute breaks. While this specific configuration awaits direct experimental validation, it is grounded in cognitive load theory and aims to support deeper engagement without premature interruption.
+
+**References:**
+
+- Biwer, F., Wiradhany, W., oude Egbrink, M. G. A., & de Bruin, A. B. H. (2023). Understanding effort regulation: Comparing 'Pomodoro' breaks and self-regulated breaks. *British Journal of Educational Psychology*, 93(S2), 353–367. https://doi.org/10.1111/bjep.12593
+- González, V. M., & Mark, G. (2004). "Constant, constant, multi-tasking craziness": Managing multiple working spheres. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 113–120. https://doi.org/10.1145/985692.985707
+- Mark, G., González, V. M., & Harris, J. (2005). No task left behind? Examining the nature of fragmented work. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 321–330. https://doi.org/10.1145/1054972.1055017
+- Ogut, E. (2025). Assessing the efficacy of the Pomodoro technique in enhancing anatomy lesson retention during study sessions: A scoping review. *BMC Medical Education*, 25(1), 1440. https://doi.org/10.1186/s12909-025-08001-0
 
 ## Import/Export Format
 
@@ -118,6 +140,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 
 - **シングルウィンドウ**: 必要な情報は一目で把握
 - **キーボードファースト**: すべての操作にショートカット
+- **研究ベース**: 認知科学に基づいたタイマープリセット
 - **階層タスク**: サブタスクで自然に作業を分割
 - **優先度駆動**: 3段階（!, !!, !!!）でシンプルな判断
 - **ローカルファースト**: データは自分のマシンに
@@ -147,6 +170,8 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 | ⌘R | サイクルをリセット |
 | ⌘⇧S | 優先度順にソート |
 | ⌘⇧V | ビューモード切替 |
+| ⌘⇧T | タイマープリセット切替 |
+| ⌘⇧P | 最前面固定切替 |
 | ⌘⌫ | 完了タスクを削除 |
 | ⌘⇧⌫ | すべてのタスクを削除 |
 | ⌘V | クリップボードからインポート |
@@ -160,6 +185,25 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 - `!` 低優先度（グレー）
 - `!!` 中優先度（青）- デフォルト
 - `!!!` 高優先度（赤）
+
+## タイマープリセット
+
+このアプリは、努力調節と構造化された休憩に関するいくつかの研究に基づいた2つのタイマープリセットを提供します。
+
+### 🐇 ショートフォーカスモード（12分 + 3分休憩）
+
+研究によると、人は約12分ごとにタスクを切り替える傾向があります（González & Mark, 2004; Mark et al., 2005）。Biwer et al. (2023) は、短い体系的休憩（12分作業／3分休憩）、長い体系的休憩（24分作業／6分休憩）、自己調整休憩を比較しました。両方の体系的条件は、自己調整休憩と比較して疲労を軽減し集中力を向上させました。特に短い間隔の条件は、ほとんどの指標で長い間隔の条件より良好な傾向を示し、自然なタスク切り替えリズムに休憩タイミングを合わせることの潜在的な利点を示唆しています。
+
+### 🐢 ディープフォーカスモード（35分 + 10分休憩）
+
+持続的な注意を必要とする認知的に要求の高いタスクに対して、Ogut (2025) はポモドーロ・テクニックに関する文献をレビューし、35分の集中作業と10分の休憩という拡張された間隔を提案しました。この特定の構成は直接的な実験的検証を待っていますが、認知負荷理論に基づいており、早すぎる中断なしにより深い取り組みをサポートすることを目的としています。
+
+**参考文献：**
+
+- Biwer, F., Wiradhany, W., oude Egbrink, M. G. A., & de Bruin, A. B. H. (2023). Understanding effort regulation: Comparing 'Pomodoro' breaks and self-regulated breaks. *British Journal of Educational Psychology*, 93(S2), 353–367.
+- González, V. M., & Mark, G. (2004). "Constant, constant, multi-tasking craziness": Managing multiple working spheres. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 113–120.
+- Mark, G., González, V. M., & Harris, J. (2005). No task left behind? Examining the nature of fragmented work. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 321–330.
+- Ogut, E. (2025). Assessing the efficacy of the Pomodoro technique in enhancing anatomy lesson retention during study sessions: A scoping review. *BMC Medical Education*, 25(1), 1440.
 
 ## インポート/エクスポート形式
 

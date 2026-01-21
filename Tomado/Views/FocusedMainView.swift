@@ -13,7 +13,16 @@ struct FocusedMainView: View {
     @State private var pressedButton: String?  // 押下中のボタンID
     @State private var toastMessage: String?  // トースト通知
     @State private var sortState: SortState = .unsorted  // ソート状態
+    @State private var isTopmost: Bool = false  // 最前面固定
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
+    @AppStorage("timerPreset") private var timerPreset: TimerPreset = .shortFocus  // タイマープリセット
+    // タイマープリセット設定（カスタマイズ可能）
+    @AppStorage("shortFocusWork") private var shortFocusWork: Int = 12
+    @AppStorage("shortFocusBreak") private var shortFocusBreak: Int = 3
+    @AppStorage("shortFocusLongBreak") private var shortFocusLongBreak: Int = 15
+    @AppStorage("deepFocusWork") private var deepFocusWork: Int = 35
+    @AppStorage("deepFocusBreak") private var deepFocusBreak: Int = 10
+    @AppStorage("deepFocusLongBreak") private var deepFocusLongBreak: Int = 30
     @FocusState private var isInputFocused: Bool
 
     enum SortState {
@@ -25,6 +34,18 @@ struct FocusedMainView: View {
     enum ViewMode: String {
         case separated   // 分離ビュー（未完了/完了で分ける）
         case hierarchy   // 階層ビュー（階層を維持）
+    }
+
+    enum TimerPreset: String {
+        case shortFocus  // 12-3-15 (Short Focus Mode)
+        case deepFocus   // 35-10-30 (Deep Focus Mode)
+
+        var settings: (work: Int, shortBreak: Int, longBreak: Int) {
+            switch self {
+            case .shortFocus: return (12, 3, 15)
+            case .deepFocus: return (35, 10, 30)
+            }
+        }
     }
 
     var body: some View {
@@ -357,6 +378,73 @@ struct FocusedMainView: View {
             viewMode = .separated
             showToast(String(localized: "toast.viewSeparated"))
         }
+    }
+
+    private func timerPresetButton() -> some View {
+        let isPressed = pressedButton == "timerPreset"
+        let (icon, color): (String, Color) = switch timerPreset {
+        case .shortFocus: ("hare", .orange)
+        case .deepFocus: ("tortoise", .purple)
+        }
+
+        return Button(action: {
+            flashButton("timerPreset")
+            toggleTimerPreset()
+        }) {
+            Image(systemName: icon)
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(color)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private func toggleTimerPreset() {
+        switch timerPreset {
+        case .shortFocus:
+            timerPreset = .deepFocus
+            timer.updateSettings(
+                workMinutes: deepFocusWork,
+                breakMinutes: deepFocusBreak,
+                longBreakMinutes: deepFocusLongBreak,
+                pomodorosUntilLongBreak: timer.pomodorosUntilLongBreak
+            )
+            showToast(String(localized: "toast.deepFocus"))
+        case .deepFocus:
+            timerPreset = .shortFocus
+            timer.updateSettings(
+                workMinutes: shortFocusWork,
+                breakMinutes: shortFocusBreak,
+                longBreakMinutes: shortFocusLongBreak,
+                pomodorosUntilLongBreak: timer.pomodorosUntilLongBreak
+            )
+            showToast(String(localized: "toast.shortFocus"))
+        }
+    }
+
+    private func topmostButton() -> some View {
+        let isPressed = pressedButton == "topmost"
+
+        return Button(action: {
+            flashButton("topmost")
+            toggleTopmost()
+        }) {
+            Image(systemName: isTopmost ? "pin.fill" : "pin")
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(isTopmost ? .accentColor : .secondary)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private func toggleTopmost() {
+        isTopmost.toggle()
+        if let window = NSApp.windows.first {
+            window.level = isTopmost ? .floating : .normal
+        }
+        showToast(isTopmost ? String(localized: "toast.topmostOn") : String(localized: "toast.topmostOff"))
     }
 
     private func footerButton(
@@ -764,6 +852,14 @@ struct FocusedMainView: View {
 
             Spacer()
 
+            // タイマープリセット切替 (⌘⇧T)
+            timerPresetButton()
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+
+            // 最前面固定 (⌘⇧P)
+            topmostButton()
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+
             // ビューモード切替 (⌘⇧V)
             viewModeButton()
                 .keyboardShortcut("v", modifiers: [.command, .shift])
@@ -902,6 +998,14 @@ struct SettingsView: View {
     // 言語設定
     @AppStorage("appLanguage") private var appLanguage: String = "system"
 
+    // タイマープリセット設定
+    @AppStorage("shortFocusWork") private var shortFocusWork: Int = 12
+    @AppStorage("shortFocusBreak") private var shortFocusBreak: Int = 3
+    @AppStorage("shortFocusLongBreak") private var shortFocusLongBreak: Int = 15
+    @AppStorage("deepFocusWork") private var deepFocusWork: Int = 35
+    @AppStorage("deepFocusBreak") private var deepFocusBreak: Int = 10
+    @AppStorage("deepFocusLongBreak") private var deepFocusLongBreak: Int = 30
+
     init(timer: PomodoroTimer) {
         self.timer = timer
         _workMinutes = State(initialValue: timer.workDuration / 60)
@@ -933,11 +1037,16 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Section(String(localized: "settings.timer")) {
-                    Stepper(String(localized: "settings.work \(workMinutes)"), value: $workMinutes, in: 1...60)
-                    Stepper(String(localized: "settings.break \(breakMinutes)"), value: $breakMinutes, in: 1...30)
-                    Stepper(String(localized: "settings.longBreak \(longBreakMinutes)"), value: $longBreakMinutes, in: 1...60)
-                    Stepper(String(localized: "settings.cycle \(cycleCount)"), value: $cycleCount, in: 1...10)
+                Section("🐇 " + String(localized: "settings.shortFocus")) {
+                    Stepper(String(localized: "settings.work \(shortFocusWork)"), value: $shortFocusWork, in: 1...60)
+                    Stepper(String(localized: "settings.break \(shortFocusBreak)"), value: $shortFocusBreak, in: 1...30)
+                    Stepper(String(localized: "settings.longBreak \(shortFocusLongBreak)"), value: $shortFocusLongBreak, in: 1...60)
+                }
+
+                Section("🐢 " + String(localized: "settings.deepFocus")) {
+                    Stepper(String(localized: "settings.work \(deepFocusWork)"), value: $deepFocusWork, in: 1...60)
+                    Stepper(String(localized: "settings.break \(deepFocusBreak)"), value: $deepFocusBreak, in: 1...30)
+                    Stepper(String(localized: "settings.longBreak \(deepFocusLongBreak)"), value: $deepFocusLongBreak, in: 1...60)
                 }
 
                 Section(String(localized: "settings.sound")) {
