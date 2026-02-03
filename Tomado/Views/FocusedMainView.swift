@@ -12,8 +12,8 @@ struct FocusedMainView: View {
     @State private var activePriority: Priority = .medium  // 現在ハイライト中の優先度
     @State private var pressedButton: String?  // 押下中のボタンID
     @State private var toastMessage: String?  // トースト通知
-    @State private var sortState: SortState = .unsorted  // ソート状態
-    @State private var isTopmost: Bool = false  // 最前面固定
+    @AppStorage("sortState") private var sortState: SortState = .unsorted  // ソート状態
+    @AppStorage("isTopmost") private var isTopmost: Bool = false  // 最前面固定
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
     @AppStorage("timerPreset") private var timerPreset: TimerPreset = .shortFocus  // タイマープリセット
     // タイマープリセット設定（カスタマイズ可能）
@@ -25,7 +25,7 @@ struct FocusedMainView: View {
     @AppStorage("deepFocusLongBreak") private var deepFocusLongBreak: Int = 30
     @FocusState private var isInputFocused: Bool
 
-    enum SortState {
+    enum SortState: String {
         case unsorted  // 灰色
         case descending  // 赤（高→低）
         case ascending  // 青（低→高）
@@ -81,6 +81,10 @@ struct FocusedMainView: View {
         .onAppear {
             isInputFocused = true
             updateTimerTask()
+            // Restore topmost state
+            if let window = NSApp.windows.first {
+                window.level = isTopmost ? .floating : .normal
+            }
         }
         .onChange(of: taskListVM.currentTask?.id) { _, _ in
             updateTimerTask()
@@ -887,6 +891,10 @@ struct FocusedMainView: View {
             footerButton(id: "import", icon: "square.and.arrow.down") {
                 let count = taskListVM.importFromClipboard()
                 if count > 0 {
+                    // インポート後、現在のソート状態を適用
+                    if sortState != .unsorted {
+                        taskListVM.sort(ascending: sortState == .ascending)
+                    }
                     showToast(String(localized: "toast.imported \(count)"))
                 }
             }

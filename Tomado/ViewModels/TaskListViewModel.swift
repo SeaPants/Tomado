@@ -474,9 +474,8 @@ public class TaskListViewModel: ObservableObject {
             parentStack.append((level: item.indentLevel, id: task.id, actualIndent: actualIndentLevel))
         }
 
-        // 階層順でタスクを追加した後、実行順に並べ替え
+        // 階層順でタスクを追加
         taskList.tasks.append(contentsOf: addedTasks)
-        taskList.sort()
         save()
 
         return addedTasks.count
