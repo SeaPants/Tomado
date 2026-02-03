@@ -587,6 +587,11 @@ public class TaskListViewModel: ObservableObject {
         }
     }
 
+    /// 保存されたタスクリストをリロード
+    public func reload() {
+        load()
+    }
+
     private func save() {
         do {
             let data = try JSONEncoder().encode(taskList)

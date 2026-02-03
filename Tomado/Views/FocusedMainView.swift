@@ -343,9 +343,10 @@ struct FocusedMainView: View {
             sortState = .ascending
             showToast(String(localized: "toast.sortAscending"))
         case .ascending:
-            taskListVM.sort(ascending: false)
-            sortState = .descending
-            showToast(String(localized: "toast.sortDescending"))
+            // unsortedに戻る（保存された順序をリロード）
+            taskListVM.reload()
+            sortState = .unsorted
+            showToast(String(localized: "toast.sortUnsorted"))
         }
     }
 

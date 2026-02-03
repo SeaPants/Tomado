@@ -871,6 +871,22 @@
         }
       }
     },
+    "toast.sortUnsorted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort cleared"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ソート解除"
+          }
+        }
+      }
+    },
     "toast.viewHierarchy" : {
       "localizations" : {
         "en" : {
