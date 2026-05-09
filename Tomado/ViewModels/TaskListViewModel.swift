@@ -390,91 +390,114 @@ public class TaskListViewModel: ObservableObject {
         let detectedIndent = detectIndentUnit(in: text)
 
         // パース結果を一時保存
-        struct ParsedTask {
-            var title: String
-            var priority: Priority
-            var isCompleted: Bool
-            var indentLevel: Int
+        enum ParsedItem {
+            case task(title: String, priority: Priority, isCompleted: Bool, indentLevel: Int)
+            case note(text: String, indentLevel: Int)
         }
 
-        var parsed: [ParsedTask] = []
+        var parsed: [ParsedItem] = []
 
         for line in lines {
             guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
 
-            // インデントレベルを計算
             let indentLevel = calculateIndentLevel(line: line, indentUnit: detectedIndent)
+            var content = line.trimmingCharacters(in: .whitespaces)
 
-            var title = line.trimmingCharacters(in: .whitespaces)
+            // Markdown チェックボックス形式をタスクとしてパース
+            var isTask = false
             var isCompleted = false
-            var isValidLine = false
-
-            // Markdown チェックボックス形式をパース
-            if title.hasPrefix("- [x]") || title.hasPrefix("- [X]") {
-                title = String(title.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            if content.hasPrefix("- [x]") || content.hasPrefix("- [X]") {
+                content = String(content.dropFirst(5)).trimmingCharacters(in: .whitespaces)
                 isCompleted = true
-                isValidLine = true
-            } else if title.hasPrefix("- [ ]") {
-                title = String(title.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                isValidLine = true
-            } else if title.hasPrefix("- ") {
-                title = String(title.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                isValidLine = allowListFormat
-            } else if title.hasPrefix("* ") {
-                title = String(title.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                isValidLine = allowListFormat
-            } else if allowListFormat, let match = title.firstMatch(of: /^\d+\.\s+/) {
-                // 番号付きリスト (1. 2. など)
-                title = String(title.dropFirst(match.0.count)).trimmingCharacters(in: .whitespaces)
-                isValidLine = true
+                isTask = true
+            } else if content.hasPrefix("- [ ]") {
+                content = String(content.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                isTask = true
+            } else if allowListFormat,
+                      content.hasPrefix("- ") || content.hasPrefix("* ") {
+                content = String(content.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                isTask = true
+            } else if allowListFormat, let match = content.firstMatch(of: /^\d+\.\s+/) {
+                content = String(content.dropFirst(match.0.count)).trimmingCharacters(in: .whitespaces)
+                isTask = true
+            } else if (content.hasPrefix("- ") || content.hasPrefix("* ") || content.hasPrefix("> "))
+                      && indentLevel > 0 {
+                // インデントされた非チェックボックス bullet/quote → 注釈/メモ扱い
+                let stripped: String
+                if content.hasPrefix("> ") {
+                    stripped = String(content.dropFirst(2))
+                } else {
+                    stripped = String(content.dropFirst(2))
+                }
+                let noteText = stripped.trimmingCharacters(in: .whitespaces)
+                if !noteText.isEmpty {
+                    parsed.append(.note(text: noteText, indentLevel: indentLevel))
+                }
+                continue
             }
 
-            guard isValidLine, !title.isEmpty else { continue }
+            guard isTask, !content.isEmpty else { continue }
 
-            // 優先度をパース（末尾の ! !! !!!）
+            // 優先度をパース
             var priority: Priority = .medium
-            if title.hasSuffix(" !!!") {
+            if content.hasSuffix(" !!!") {
                 priority = .high
-                title = String(title.dropLast(4))
-            } else if title.hasSuffix(" !!") {
+                content = String(content.dropLast(4))
+            } else if content.hasSuffix(" !!") {
                 priority = .medium
-                title = String(title.dropLast(3))
-            } else if title.hasSuffix(" !") {
+                content = String(content.dropLast(3))
+            } else if content.hasSuffix(" !") {
                 priority = .low
-                title = String(title.dropLast(2))
+                content = String(content.dropLast(2))
             }
 
-            parsed.append(ParsedTask(title: title, priority: priority, isCompleted: isCompleted, indentLevel: indentLevel))
+            parsed.append(.task(title: content, priority: priority, isCompleted: isCompleted, indentLevel: indentLevel))
         }
 
         guard !parsed.isEmpty else { return 0 }
 
-        // 親子関係を構築しながらタスクを作成
+        // 親子関係を構築しながらタスク + メモを実体化
         var parentStack: [(level: Int, id: String, actualIndent: Int)] = []
         var addedTasks: [TodoTask] = []
+        var notesByTaskId: [String: [String]] = [:]
+        var lastTaskId: String?
+        var lastTaskLevel: Int = -1
 
         for item in parsed {
-            // 親を特定（元テキストのインデントレベルで比較）
-            while !parentStack.isEmpty && parentStack.last!.level >= item.indentLevel {
-                parentStack.removeLast()
+            switch item {
+            case let .task(title, priority, isCompleted, indentLevel):
+                while !parentStack.isEmpty && parentStack.last!.level >= indentLevel {
+                    parentStack.removeLast()
+                }
+                let parentId = parentStack.last?.id
+                let actualIndentLevel = parentStack.last.map { $0.actualIndent + 1 } ?? 0
+
+                let task = TodoTask(
+                    title: title,
+                    priority: priority,
+                    isCompleted: isCompleted,
+                    parentId: parentId,
+                    indentLevel: actualIndentLevel
+                )
+                addedTasks.append(task)
+                parentStack.append((level: indentLevel, id: task.id, actualIndent: actualIndentLevel))
+                lastTaskId = task.id
+                lastTaskLevel = indentLevel
+
+            case let .note(text, indentLevel):
+                // 直前のタスク (より浅いインデント) に紐付け
+                guard let id = lastTaskId, indentLevel > lastTaskLevel else { continue }
+                notesByTaskId[id, default: []].append(text)
             }
-            let parentId = parentStack.last?.id
-            // 実際のインデントレベルは親の+1（親がなければ0）
-            let actualIndentLevel = parentStack.last.map { $0.actualIndent + 1 } ?? 0
-
-            let task = TodoTask(
-                title: item.title,
-                priority: item.priority,
-                isCompleted: item.isCompleted,
-                parentId: parentId,
-                indentLevel: actualIndentLevel
-            )
-
-            addedTasks.append(task)
-            parentStack.append((level: item.indentLevel, id: task.id, actualIndent: actualIndentLevel))
         }
 
-        // 階層順でタスクを追加
+        // notes をマージしてタスクに付与
+        for i in addedTasks.indices {
+            if let lines = notesByTaskId[addedTasks[i].id] {
+                addedTasks[i].notes = lines.joined(separator: "\n")
+            }
+        }
+
         taskList.tasks.append(contentsOf: addedTasks)
         save()
 
@@ -499,8 +522,16 @@ public class TaskListViewModel: ObservableObject {
             let indent = String(repeating: indentUnit, count: task.indentLevel)
             let checkbox = task.isCompleted ? "[x]" : "[ ]"
             let priority = task.isRoot ? " \(task.priority.symbol)" : ""
-            let pomodoros = task.pomodoros > 0 ? " (\(task.pomodoros)🍅)" : ""
+            let pomodoros = task.pomodoros > 0 ? " (\(task.pomodoros)×)" : ""
             lines.append("\(indent)- \(checkbox) \(task.title)\(priority)\(pomodoros)")
+
+            // notes は次のインデントレベルで bullet として書き出し
+            if let notes = task.notes, !notes.isEmpty {
+                let noteIndent = String(repeating: indentUnit, count: task.indentLevel + 1)
+                for noteLine in notes.components(separatedBy: "\n") where !noteLine.isEmpty {
+                    lines.append("\(noteIndent)- \(noteLine)")
+                }
+            }
         }
 
         let text = lines.joined(separator: "\n")
@@ -599,5 +630,64 @@ public class TaskListViewModel: ObservableObject {
         } catch {
             // エラーは無視
         }
+    }
+
+    // MARK: - Hierarchy Helpers
+
+    /// 指定タスクの直接の子・孫含む未完了サブタスク数
+    public func incompleteSubtaskCount(for taskId: String) -> Int {
+        let subtaskIds = Set(getSubtaskIds(for: taskId))
+        return taskList.tasks.filter { subtaskIds.contains($0.id) && !$0.isCompleted }.count
+    }
+
+    /// 指定タスクの全サブタスク（直接の子・孫含む）が完了しているか
+    public func areAllSubtasksCompleted(for taskId: String) -> Bool {
+        let subtaskIds = getSubtaskIds(for: taskId)
+        guard !subtaskIds.isEmpty else { return true }
+        return subtaskIds.allSatisfy { id in
+            taskList.tasks.first(where: { $0.id == id })?.isCompleted ?? false
+        }
+    }
+
+    /// 親タスクが存在し、その親の全サブタスクが完了したら親も自動完了
+    /// 完了されたタスクのID（あれば）を返す
+    @discardableResult
+    public func autoCompleteParentIfReady(for taskId: String) -> String? {
+        guard let task = taskList.tasks.first(where: { $0.id == taskId }),
+              let parentId = task.parentId,
+              let parentIndex = taskList.tasks.firstIndex(where: { $0.id == parentId }),
+              !taskList.tasks[parentIndex].isCompleted,
+              areAllSubtasksCompleted(for: parentId) else {
+            return nil
+        }
+        // 親を完了
+        taskList.tasks[parentIndex].isCompleted = true
+        // 親も含めて末尾に並べ替え
+        let parentTask = taskList.tasks.remove(at: parentIndex)
+        taskList.tasks.append(parentTask)
+        taskList.lastModified = Date()
+        save()
+        // 再帰的に祖父も判定
+        autoCompleteParentIfReady(for: parentId)
+        return parentId
+    }
+
+    /// 完了後に次の未完了タスクへ自動遷移（集中状態の保護）
+    public func advanceToNextTask() {
+        if let next = taskList.nextTask {
+            currentTaskId = next.id
+        }
+    }
+
+    /// Quick Capture: 軽量タスクを末尾に追加（ソート影響なし、低優先度）
+    public func quickCapture(_ title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let task = TodoTask(title: trimmed, priority: .low)
+        // 未完了タスクの末尾、完了タスクの直前に挿入
+        let insertIndex = taskList.tasks.firstIndex(where: { $0.isCompleted }) ?? taskList.tasks.count
+        taskList.tasks.insert(task, at: insertIndex)
+        taskList.lastModified = Date()
+        save()
     }
 }

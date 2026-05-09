@@ -24,6 +24,7 @@ public struct TodoTask: Identifiable, Codable, Hashable, Sendable {
     public var createdAt: Date
     public var parentId: String?  // 親タスクのID（nilならルートタスク）
     public var indentLevel: Int   // インデントレベル（0=ルート）
+    public var notes: String?     // タスクに付随するメモ（複数行可、改行区切り）
 
     public init(
         id: String = UUID().uuidString,
@@ -33,7 +34,8 @@ public struct TodoTask: Identifiable, Codable, Hashable, Sendable {
         pomodoros: Int = 0,
         createdAt: Date = Date(),
         parentId: String? = nil,
-        indentLevel: Int = 0
+        indentLevel: Int = 0,
+        notes: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -43,6 +45,7 @@ public struct TodoTask: Identifiable, Codable, Hashable, Sendable {
         self.createdAt = createdAt
         self.parentId = parentId
         self.indentLevel = indentLevel
+        self.notes = notes
     }
 
     public mutating func complete() {

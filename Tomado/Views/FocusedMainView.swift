@@ -12,10 +12,17 @@ struct FocusedMainView: View {
     @State private var activePriority: Priority = .medium  // 現在ハイライト中の優先度
     @State private var pressedButton: String?  // 押下中のボタンID
     @State private var toastMessage: String?  // トースト通知
+    @State private var showQuickCapture: Bool = false  // Quick Capture シート
+    @State private var quickCaptureText: String = ""
+    @State private var pendingCompleteTaskId: String?  // サブタスク確認待ちの親タスクID
+    @State private var pendingCompleteSubtaskCount: Int = 0
+    @State private var showCompleteWithSubtasksConfirm: Bool = false
     @AppStorage("sortState") private var sortState: SortState = .unsorted  // ソート状態
     @AppStorage("isTopmost") private var isTopmost: Bool = false  // 最前面固定
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
     @AppStorage("timerPreset") private var timerPreset: TimerPreset = .shortFocus  // タイマープリセット
+    @AppStorage("strictBreakMode") private var strictBreakMode: Bool = false  // 厳格な休憩モード
+    @StateObject private var breakLockController = BreakLockWindowController()
     // タイマープリセット設定（カスタマイズ可能）
     @AppStorage("shortFocusWork") private var shortFocusWork: Int = 12
     @AppStorage("shortFocusBreak") private var shortFocusBreak: Int = 3
@@ -49,42 +56,15 @@ struct FocusedMainView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // 入力エリア
-            inputSection
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-            Divider()
-
-            // メインエリア（現在のタスク + タイマー）
-            if let currentTask = taskListVM.currentTask {
-                currentTaskSection(currentTask)
-            } else {
-                emptyStateView
-            }
-
-            Divider()
-
-            // 待機タスクリスト
-            taskListSection
-
-            Divider()
-
-            // フッター
-            footerSection
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-        }
-        .frame(minWidth: 300, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
+        standardLayout
+        .frame(minWidth: 320, maxWidth: .infinity, minHeight: 440, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
+        .animation(.easeInOut(duration: 0.25), value: timer.currentPhase)
         .onAppear {
             isInputFocused = true
             updateTimerTask()
-            // Restore topmost state
-            if let window = NSApp.windows.first {
-                window.level = isTopmost ? .floating : .normal
-            }
+            applyWindowLevel()
+            updateBreakLock()
         }
         .onChange(of: taskListVM.currentTask?.id) { _, _ in
             updateTimerTask()
@@ -92,8 +72,31 @@ struct FocusedMainView: View {
         .onChange(of: taskListVM.taskList.tasks) { _, _ in
             updateTimerTask()
         }
+        .onChange(of: timer.currentPhase) { _, _ in
+            applyWindowLevel()
+            updateBreakLock()
+        }
+        .onChange(of: strictBreakMode) { _, _ in
+            applyWindowLevel()
+            updateBreakLock()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(timer: timer)
+        }
+        .sheet(isPresented: $showQuickCapture) {
+            QuickCaptureView(
+                text: $quickCaptureText,
+                onSave: {
+                    taskListVM.quickCapture(quickCaptureText)
+                    quickCaptureText = ""
+                    showQuickCapture = false
+                    showToast(String(localized: "toast.captured"))
+                },
+                onCancel: {
+                    quickCaptureText = ""
+                    showQuickCapture = false
+                }
+            )
         }
         .alert(String(localized: "alert.clearCompleted.title"), isPresented: $showClearCompletedConfirm) {
             Button(String(localized: "button.cancel"), role: .cancel) {}
@@ -115,6 +118,25 @@ struct FocusedMainView: View {
         } message: {
             Text(String(localized: "alert.clearAll.message"))
         }
+        .alert(
+            String(localized: "alert.completeWithSubtasks.title"),
+            isPresented: $showCompleteWithSubtasksConfirm
+        ) {
+            Button(String(localized: "button.cancel"), role: .cancel) {
+                pendingCompleteTaskId = nil
+                pendingCompleteSubtaskCount = 0
+            }
+            Button(String(localized: "button.completeAll")) {
+                if let id = pendingCompleteTaskId {
+                    performComplete(taskId: id)
+                }
+                pendingCompleteTaskId = nil
+                pendingCompleteSubtaskCount = 0
+            }
+            .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(String(localized: "alert.completeWithSubtasks.message \(pendingCompleteSubtaskCount)"))
+        }
         .overlay(alignment: .top) {
             if let message = toastMessage {
                 Text(message)
@@ -129,6 +151,76 @@ struct FocusedMainView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: toastMessage)
+    }
+
+    // MARK: - Layouts
+
+    private var standardLayout: some View {
+        VStack(spacing: 0) {
+            inputSection
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+
+            Divider()
+
+            if let currentTask = taskListVM.currentTask {
+                currentTaskSection(currentTask)
+            } else {
+                emptyStateView
+            }
+
+            Divider()
+
+            taskListSection
+
+            Divider()
+
+            footerSection
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+        }
+    }
+
+    /// 現フェーズの進捗 (0...1) - 標準モードのリングが使う
+    private var phaseProgress: Double {
+        let total: Int
+        switch timer.currentPhase {
+        case .work: total = timer.workDuration
+        case .break_: total = timer.breakDuration
+        case .longBreak: total = timer.longBreakDuration
+        }
+        guard total > 0 else { return 0 }
+        return 1.0 - (Double(timer.remainingSeconds) / Double(total))
+    }
+
+    // MARK: - Mode Toggles & Break Lock
+
+    private func toggleMinimal() {
+        // AppDelegate (single source of truth) に委譲
+        TomadoAppDelegate.shared?.toggleMinimalMode()
+    }
+
+    /// 厳格な休憩モード中は強制 topmost、それ以外はユーザー設定に従う
+    private func applyWindowLevel() {
+        guard let window = TomadoAppDelegate.shared?.mainWindow else { return }
+        let inBreak = timer.currentPhase != .work
+        if strictBreakMode && inBreak {
+            window.level = .floating
+        } else {
+            window.level = isTopmost ? .floating : .normal
+        }
+    }
+
+    /// 休憩フェーズに合わせてフルスクリーンロックウィンドウを表示/非表示
+    private func updateBreakLock() {
+        let inBreak = timer.currentPhase != .work
+        if strictBreakMode && inBreak {
+            breakLockController.show(timer: timer, onSkip: {
+                showToast(String(localized: "toast.skipped"))
+            })
+        } else {
+            breakLockController.hide()
+        }
     }
 
     // MARK: - Input Section
@@ -176,20 +268,20 @@ struct FocusedMainView: View {
     // MARK: - Current Task Section
 
     private func currentTaskSection(_ task: TodoTask) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 10) {
             Spacer()
 
             // タスク名 + 優先度
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text(task.priority.symbol)
-                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(colorFor(task.priority))
                 Text(task.title)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
             }
             .multilineTextAlignment(.center)
-            .lineLimit(3)
-            .padding(.horizontal, 24)
+            .lineLimit(2)
+            .padding(.horizontal, 20)
 
             // タイマー
             timerDisplay
@@ -200,25 +292,45 @@ struct FocusedMainView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 12)
     }
 
     private var timerDisplay: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             Text(formatTime(timer.remainingSeconds))
-                .font(.system(size: 48, weight: .light, design: .monospaced))
+                .font(.system(size: 52, weight: .ultraLight, design: .monospaced))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .foregroundColor(timer.isRunning ? .primary : .primary.opacity(0.55))
+                .contentShape(Rectangle())
+                .onTapGesture { toggleTimer() }
 
             Text(phaseText)
-                .font(.caption)
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(phaseColor)
-        }
-        .onTapGesture {
-            toggleTimer()
+                .textCase(.uppercase)
+                .tracking(1.2)
+
+            // 横棒プログレスバー
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(height: 2)
+                    Capsule()
+                        .fill(phaseColor.opacity(0.7))
+                        .frame(width: geo.size.width * phaseProgress, height: 2)
+                        .animation(.linear(duration: 0.5), value: phaseProgress)
+                }
+            }
+            .frame(height: 2)
+            .frame(maxWidth: 180)
+            .padding(.top, 2)
         }
     }
 
     private func controlButtons(_ task: TodoTask) -> some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 16) {
             // 後回しボタン
             controlButton(
                 id: "postpone",
@@ -242,7 +354,7 @@ struct FocusedMainView: View {
                 id: "play",
                 icon: timer.isRunning ? "pause.circle.fill" : "play.circle.fill",
                 color: phaseColor,
-                size: 56,
+                size: 44,
                 action: toggleTimer
             )
             .keyboardShortcut("p", modifiers: .command)
@@ -278,7 +390,7 @@ struct FocusedMainView: View {
         id: String,
         icon: String,
         color: Color,
-        size: CGFloat = 28,
+        size: CGFloat = 22,
         action: @escaping () -> Void
     ) -> some View {
         let isPressed = pressedButton == id
@@ -403,6 +515,7 @@ struct FocusedMainView: View {
         .foregroundColor(color)
         .scaleEffect(isPressed ? 1.3 : 1.0)
         .animation(.easeOut(duration: 0.1), value: isPressed)
+        .help(String(localized: "tooltip.timerPreset"))
     }
 
     private func toggleTimerPreset() {
@@ -446,10 +559,25 @@ struct FocusedMainView: View {
 
     private func toggleTopmost() {
         isTopmost.toggle()
-        if let window = NSApp.windows.first {
-            window.level = isTopmost ? .floating : .normal
-        }
+        applyWindowLevel()
         showToast(isTopmost ? String(localized: "toast.topmostOn") : String(localized: "toast.topmostOff"))
+    }
+
+    private func minimalToggleButton() -> some View {
+        let isPressed = pressedButton == "minimal"
+        // Standard モードでのみ表示されるので常に false 想定で良いが、念のため AppDelegate から取得
+        let inMinimal = TomadoAppDelegate.shared?.isMinimalMode ?? false
+        return Button(action: {
+            flashButton("minimal")
+            toggleMinimal()
+        }) {
+            Image(systemName: inMinimal ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(inMinimal ? .accentColor : .secondary)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
     }
 
     private func footerButton(
@@ -618,9 +746,9 @@ struct FocusedMainView: View {
             Spacer()
 
             if task.pomodoros > 0 {
-                Text("\(task.pomodoros)🍅")
-                    .font(.caption)
-                    .foregroundColor(.secondary.opacity(0.5))
+                Text("\(task.pomodoros)×")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.55))
             }
         }
         .contextMenu {
@@ -667,54 +795,76 @@ struct FocusedMainView: View {
     }
 
     private func taskRow(_ task: TodoTask, isCurrent: Bool = false, ancestorIndex: Int? = nil) -> some View {
-        HStack(spacing: 6) {
-            // プレイマーク（現在のタスク）
-            if isCurrent {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(phaseColor)
-            }
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                // プレイマーク（現在のタスク）
+                if isCurrent {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(phaseColor)
+                }
 
-            // インデント
-            if task.indentLevel > 0 {
-                HStack(spacing: 0) {
-                    ForEach(0..<task.indentLevel, id: \.self) { level in
-                        Rectangle()
-                            .fill(Color.secondary.opacity(0.2))
-                            .frame(width: 2, height: 16)
-                            .padding(.horizontal, 6)
+                // インデント
+                if task.indentLevel > 0 {
+                    HStack(spacing: 0) {
+                        ForEach(0..<task.indentLevel, id: \.self) { level in
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.2))
+                                .frame(width: 2, height: 16)
+                                .padding(.horizontal, 6)
+                        }
                     }
                 }
-            }
 
-            // タスク名
-            Text(task.title)
-                .font(task.isRoot ? .body : .callout)
-                .foregroundColor(task.isRoot || isCurrent ? .primary : .secondary)
-                .fontWeight(isCurrent ? .medium : .regular)
-                .lineLimit(1)
+                // タスク名 + ノートマーカー
+                Text(task.title)
+                    .font(task.isRoot ? .body : .callout)
+                    .foregroundColor(task.isRoot || isCurrent ? .primary : .secondary)
+                    .fontWeight(isCurrent ? .medium : .regular)
+                    .lineLimit(1)
 
-            Spacer()
-
-            if task.pomodoros > 0 {
-                Text("\(task.pomodoros)🍅")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            // サブタスク解除ボタン
-            if !task.isRoot {
-                Button(action: { taskListVM.makeRootTask(taskId: task.id) }) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                if task.notes != nil {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 8))
+                        .foregroundColor(.secondary.opacity(0.5))
                 }
-                .buttonStyle(.plain)
+
+                Spacer()
+
+                if task.pomodoros > 0 {
+                    Text("\(task.pomodoros)×")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary.opacity(0.55))
+                }
+
+                // サブタスク解除ボタン
+                if !task.isRoot {
+                    Button(action: { taskListVM.makeRootTask(taskId: task.id) }) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // ルートタスク：優先度セレクタ（右端）
+                if task.isRoot {
+                    prioritySelector(for: task)
+                }
             }
 
-            // ルートタスク：優先度セレクタ（右端）
-            if task.isRoot {
-                prioritySelector(for: task)
+            // ノート: タスク名の下に薄く 1 行表示（ホバーで全文ツールチップ）
+            if let notes = task.notes, !notes.isEmpty {
+                let firstLine = notes.components(separatedBy: "\n").first ?? notes
+                let prefix = task.indentLevel > 0
+                    ? String(repeating: "  ", count: task.indentLevel) + (isCurrent ? "  " : "")
+                    : (isCurrent ? "  " : "")
+                Text(prefix + firstLine)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .lineLimit(1)
+                    .help(notes)
+                    .padding(.leading, 0)
             }
         }
         .contentShape(Rectangle())
@@ -825,9 +975,9 @@ struct FocusedMainView: View {
             Spacer()
 
             if task.pomodoros > 0 {
-                Text("\(task.pomodoros)🍅")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Text("\(task.pomodoros)×")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.55))
             }
         }
         .contextMenu {
@@ -843,56 +993,114 @@ struct FocusedMainView: View {
     // MARK: - Footer Section
 
     private var footerSection: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             let stats = taskListVM.taskList.stats
             Text("\(stats.completed)/\(stats.total)")
                 .font(.caption)
-                .foregroundColor(.secondary)
-
-            if stats.pomodoros > 0 {
-                Text("・\(stats.pomodoros)🍅")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+                .foregroundColor(.secondary.opacity(0.6))
+                .layoutPriority(1)
+                .fixedSize()
 
             Spacer()
 
-            // タイマープリセット切替 (⌘⇧T)
+            // 視覚状態が重要な toggle 類だけ常時表示
             timerPresetButton()
                 .keyboardShortcut("t", modifiers: [.command, .shift])
-
-            // 最前面固定 (⌘⇧P)
-            topmostButton()
-                .keyboardShortcut("p", modifiers: [.command, .shift])
-
-            // ビューモード切替 (⌘⇧V)
             viewModeButton()
                 .keyboardShortcut("v", modifiers: [.command, .shift])
-
-            // ソート (⌘⇧S)
             sortButton()
                 .disabled(taskListVM.taskList.tasks.isEmpty)
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+            minimalToggleButton()
+                .keyboardShortcut("m", modifiers: [.command, .shift])
 
-            // 完了削除（クリック時はダイアログ）
-            footerButton(id: "clearCompleted", icon: "checkmark.circle.badge.xmark") {
-                showClearCompletedConfirm = true
+            // overflow メニュー（ピン・キャプチャ・I/O・破壊系）
+            moreMenuButton
+
+            // 設定（常時アクセス可能性を保つ）
+            footerButton(id: "settings", icon: "gear") {
+                showSettings = true
             }
-            .disabled(taskListVM.taskList.tasks.filter { $0.isCompleted }.isEmpty)
-            .keyboardShortcut(.delete, modifiers: .command)
 
-            // 全削除（クリック時はダイアログ）
-            footerButton(id: "clearAll", icon: "trash") {
-                showClearAllConfirm = true
+            // 非表示のキーボードショートカット担保
+            hiddenFooterShortcuts
+        }
+    }
+
+    /// overflow メニュー: ピン留め・I/O・破壊系をまとめる
+    private var moreMenuButton: some View {
+        Menu {
+            Button {
+                toggleTopmost()
+            } label: {
+                Label(
+                    isTopmost ? String(localized: "menu.unpin") : String(localized: "menu.pin"),
+                    systemImage: isTopmost ? "pin.slash" : "pin"
+                )
             }
-            .disabled(taskListVM.taskList.tasks.isEmpty)
-            .keyboardShortcut(.delete, modifiers: [.command, .shift])
 
-            // インポート (⌘V)
-            footerButton(id: "import", icon: "square.and.arrow.down") {
+            Divider()
+
+            Button {
+                showQuickCapture = true
+            } label: {
+                Label(String(localized: "menu.quickCapture"), systemImage: "square.and.pencil")
+            }
+            Button {
                 let count = taskListVM.importFromClipboard()
                 if count > 0 {
-                    // インポート後、現在のソート状態を適用
+                    if sortState != .unsorted {
+                        taskListVM.sort(ascending: sortState == .ascending)
+                    }
+                    showToast(String(localized: "toast.imported \(count)"))
+                }
+            } label: {
+                Label(String(localized: "menu.import"), systemImage: "square.and.arrow.down")
+            }
+            Button {
+                taskListVM.exportToClipboard()
+                showToast(String(localized: "toast.exported"))
+            } label: {
+                Label(String(localized: "menu.export"), systemImage: "square.and.arrow.up")
+            }
+            .disabled(taskListVM.taskList.tasks.isEmpty)
+
+            Divider()
+
+            Button(role: .destructive) {
+                showClearCompletedConfirm = true
+            } label: {
+                Label(String(localized: "menu.clearCompleted"), systemImage: "checkmark.circle.badge.xmark")
+            }
+            .disabled(taskListVM.taskList.tasks.filter { $0.isCompleted }.isEmpty)
+
+            Button(role: .destructive) {
+                showClearAllConfirm = true
+            } label: {
+                Label(String(localized: "menu.clearAll"), systemImage: "trash")
+            }
+            .disabled(taskListVM.taskList.tasks.isEmpty)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 24)
+    }
+
+    /// メニュー化したものでもキーボードショートカットは生かす
+    private var hiddenFooterShortcuts: some View {
+        Group {
+            Button("") { toggleTopmost() }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+            Button("") { showQuickCapture = true }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("") {
+                let count = taskListVM.importFromClipboard()
+                if count > 0 {
                     if sortState != .unsorted {
                         taskListVM.sort(ascending: sortState == .ascending)
                     }
@@ -900,20 +1108,22 @@ struct FocusedMainView: View {
                 }
             }
             .keyboardShortcut("v", modifiers: .command)
-
-            // エクスポート (⌘C)
-            footerButton(id: "export", icon: "square.and.arrow.up") {
+            Button("") {
                 taskListVM.exportToClipboard()
                 showToast(String(localized: "toast.exported"))
             }
             .disabled(taskListVM.taskList.tasks.isEmpty)
             .keyboardShortcut("c", modifiers: .command)
-
-            // 設定
-            footerButton(id: "settings", icon: "gear") {
-                showSettings = true
-            }
+            Button("") { showClearCompletedConfirm = true }
+                .disabled(taskListVM.taskList.tasks.filter { $0.isCompleted }.isEmpty)
+                .keyboardShortcut(.delete, modifiers: .command)
+            Button("") { showClearAllConfirm = true }
+                .disabled(taskListVM.taskList.tasks.isEmpty)
+                .keyboardShortcut(.delete, modifiers: [.command, .shift])
         }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Helpers
@@ -927,9 +1137,37 @@ struct FocusedMainView: View {
     }
 
     private func completeCurrentTask() {
-        if let task = taskListVM.currentTask {
-            taskListVM.completeTask(id: task.id)
-            showToast(String(localized: "toast.completed"))
+        guard let task = taskListVM.currentTask else { return }
+        let count = taskListVM.incompleteSubtaskCount(for: task.id)
+        if count > 0 {
+            // 未完了サブタスクがある場合は確認モーダル
+            pendingCompleteTaskId = task.id
+            pendingCompleteSubtaskCount = count
+            showCompleteWithSubtasksConfirm = true
+        } else {
+            performComplete(taskId: task.id)
+        }
+    }
+
+    /// 実際にタスクを完了 + 親自動完了 + 次タスクへ自動遷移
+    private func performComplete(taskId: String) {
+        let parentIdBeforeCompletion = taskListVM.taskList.tasks
+            .first(where: { $0.id == taskId })?.parentId
+
+        taskListVM.completeTask(id: taskId)
+        showToast(String(localized: "toast.completed"))
+
+        // 親タスクの自動完了判定（兄弟が全完了 → 親も自動完了）
+        if let parentId = parentIdBeforeCompletion,
+           let _ = taskListVM.autoCompleteParentIfReady(for: taskId) {
+            // 親も完了したら別途トースト
+            showToast(String(localized: "toast.parentAutoCompleted"))
+            _ = parentId
+        }
+
+        // 次タスクへ自動遷移（集中状態の維持）
+        if taskListVM.currentTaskId == nil {
+            taskListVM.advanceToNextTask()
         }
     }
 
@@ -1015,6 +1253,9 @@ struct SettingsView: View {
     @AppStorage("deepFocusBreak") private var deepFocusBreak: Int = 10
     @AppStorage("deepFocusLongBreak") private var deepFocusLongBreak: Int = 30
 
+    // 厳格な休憩モード
+    @AppStorage("strictBreakMode") private var strictBreakMode: Bool = false
+
     init(timer: PomodoroTimer) {
         self.timer = timer
         _workMinutes = State(initialValue: timer.workDuration / 60)
@@ -1044,6 +1285,9 @@ struct SettingsView: View {
                     Text(String(localized: "settings.shortcuts.row3"))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.secondary)
+                    Text(String(localized: "settings.shortcuts.row4"))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
                 }
 
                 Section("🐇 " + String(localized: "settings.shortFocus")) {
@@ -1056,6 +1300,11 @@ struct SettingsView: View {
                     Stepper(String(localized: "settings.work \(deepFocusWork)"), value: $deepFocusWork, in: 1...60)
                     Stepper(String(localized: "settings.break \(deepFocusBreak)"), value: $deepFocusBreak, in: 1...30)
                     Stepper(String(localized: "settings.longBreak \(deepFocusLongBreak)"), value: $deepFocusLongBreak, in: 1...60)
+                }
+
+                Section(String(localized: "settings.breakLock")) {
+                    Toggle(String(localized: "settings.breakLock.enabled"), isOn: $strictBreakMode)
+                        .help(String(localized: "settings.breakLock.help"))
                 }
 
                 Section(String(localized: "settings.sound")) {
@@ -1099,9 +1348,15 @@ struct SettingsView: View {
                     }
                 }
 
-                Section(String(localized: "settings.import")) {
+                Section {
                     Toggle(String(localized: "settings.import.allowList"), isOn: $importAllowListFormat)
                         .help(String(localized: "settings.import.allowList.help"))
+                    Text(String(localized: "settings.import.allowList.tradeoff"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } header: {
+                    Text(String(localized: "settings.import"))
                 }
 
                 Section(String(localized: "settings.export")) {
@@ -1240,5 +1495,650 @@ class ModifierKeyMonitor: ObservableObject {
                 self?.currentPriority = .medium
             }
         }
+    }
+}
+
+// MARK: - Quick Capture
+
+/// 集中を切らずに思考を捕捉するための軽量シート
+struct QuickCaptureView: View {
+    @Binding var text: String
+    let onSave: () -> Void
+    let onCancel: () -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "square.and.pencil")
+                    .foregroundColor(.secondary)
+                Text(String(localized: "quickCapture.title"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(1)
+                Spacer()
+            }
+
+            TextField(String(localized: "quickCapture.placeholder"), text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16))
+                .focused($focused)
+                .lineLimit(3...6)
+                .onSubmit {
+                    if !text.isEmpty { onSave() }
+                }
+
+            HStack {
+                Text(String(localized: "quickCapture.hint"))
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.6))
+                Spacer()
+                Button(String(localized: "button.cancel")) { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Button(String(localized: "button.save")) { onSave() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(text.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+        .onAppear { focused = true }
+    }
+}
+
+// MARK: - Hold To Skip Button
+
+/// 長押しで発火するボタン（休憩中の摩擦用）
+struct HoldToSkipButton: View {
+    let holdSeconds: Double
+    let action: () -> Void
+
+    @State private var progress: Double = 0
+    @State private var holdTask: Task<Void, Never>?
+    @State private var isHolding = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
+                .frame(width: 44, height: 44)
+
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .frame(width: 44, height: 44)
+                .rotationEffect(.degrees(-90))
+
+            Image(systemName: "forward.fill")
+                .font(.system(size: 12))
+                .foregroundColor(isHolding ? .accentColor : .secondary)
+        }
+        .scaleEffect(isHolding ? 1.08 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isHolding)
+        .help(String(localized: "breakLock.holdToSkip"))
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isHolding {
+                        startHold()
+                    }
+                }
+                .onEnded { _ in
+                    cancelHold()
+                }
+        )
+    }
+
+    private func startHold() {
+        isHolding = true
+        let steps = 30
+        let stepDuration = holdSeconds / Double(steps)
+        let stepNanos = UInt64(stepDuration * 1_000_000_000)
+        holdTask = Task { @MainActor in
+            for i in 1...steps {
+                if Task.isCancelled { return }
+                try? await Task.sleep(nanoseconds: stepNanos)
+                if Task.isCancelled { return }
+                withAnimation(.linear(duration: stepDuration)) {
+                    progress = Double(i) / Double(steps)
+                }
+            }
+            // 完了 — アクション発火
+            action()
+            withAnimation(.easeOut(duration: 0.2)) {
+                progress = 0
+                isHolding = false
+            }
+            holdTask = nil
+        }
+    }
+
+    private func cancelHold() {
+        holdTask?.cancel()
+        holdTask = nil
+        withAnimation(.easeOut(duration: 0.2)) {
+            progress = 0
+            isHolding = false
+        }
+    }
+}
+
+// MARK: - Break Lock Window (Fullscreen)
+
+/// 休憩中に全画面ロックウィンドウを管理するコントローラー
+@MainActor
+final class BreakLockWindowController: ObservableObject {
+    private var window: NSWindow?
+
+    func show(timer: PomodoroTimer, onSkip: @escaping () -> Void) {
+        guard window == nil else { return }
+
+        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let lockWindow = NSWindow(
+            contentRect: screenFrame,
+            styleMask: [.borderless, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        lockWindow.isOpaque = false
+        lockWindow.backgroundColor = .clear
+        lockWindow.hasShadow = false
+        lockWindow.level = .screenSaver
+        lockWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        lockWindow.ignoresMouseEvents = false
+        lockWindow.isMovable = false
+        lockWindow.isReleasedWhenClosed = false
+        lockWindow.setFrame(screenFrame, display: false)
+
+        let view = BreakLockView(
+            timer: timer,
+            onSkip: { [weak self] in
+                onSkip()
+                self?.hide()
+            }
+        )
+        let host = NSHostingView(rootView: view)
+        host.frame = screenFrame
+        host.autoresizingMask = [.width, .height]
+        lockWindow.contentView = host
+        lockWindow.makeKeyAndOrderFront(nil)
+
+        self.window = lockWindow
+    }
+
+    func hide() {
+        window?.orderOut(nil)
+        window = nil
+    }
+}
+
+/// 全画面ロックビュー
+struct BreakLockView: View {
+    @ObservedObject var timer: PomodoroTimer
+    let onSkip: () -> Void
+
+    @State private var pulse: Bool = false
+    @State private var wellnessIndex: Int = 0
+    @State private var wellnessTimer: Timer?
+
+    private var phaseColor: Color {
+        switch timer.currentPhase {
+        case .work: return .blue
+        case .break_: return .green
+        case .longBreak: return .purple
+        }
+    }
+
+    private var phaseLabel: String {
+        switch timer.currentPhase {
+        case .work: return ""
+        case .break_: return String(localized: "phase.break \(timer.sessionPomodoros + 1) \(timer.pomodorosUntilLongBreak)")
+        case .longBreak: return String(localized: "phase.longBreak")
+        }
+    }
+
+    private var phaseProgress: Double {
+        let total: Int
+        switch timer.currentPhase {
+        case .work: total = timer.workDuration
+        case .break_: total = timer.breakDuration
+        case .longBreak: total = timer.longBreakDuration
+        }
+        guard total > 0 else { return 0 }
+        return 1.0 - (Double(timer.remainingSeconds) / Double(total))
+    }
+
+    /// 30秒ごとに切替わるウェルネスメッセージ
+    private var wellnessMessages: [String] {
+        [
+            String(localized: "wellness.eyes"),
+            String(localized: "wellness.stand"),
+            String(localized: "wellness.shoulders"),
+            String(localized: "wellness.hydrate"),
+            String(localized: "wellness.breathe"),
+        ]
+    }
+
+    private var currentWellness: String {
+        let messages = wellnessMessages
+        guard !messages.isEmpty else { return "" }
+        return messages[wellnessIndex % messages.count]
+    }
+
+    private func formatTime(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%02d:%02d", mins, secs)
+    }
+
+    var body: some View {
+        ZStack {
+            // 暗いバックドロップで集中を崩す
+            Rectangle()
+                .fill(.ultraThickMaterial)
+                .ignoresSafeArea()
+
+            // 休憩色のソフトグロー（息づくように脈動）
+            RadialGradient(
+                colors: [phaseColor.opacity(pulse ? 0.28 : 0.18), .clear],
+                center: .center,
+                startRadius: 0,
+                endRadius: 700
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 28) {
+                // フェーズアイコン（脈動）
+                Image(systemName: timer.currentPhase == .longBreak ? "moon.stars" : "leaf")
+                    .font(.system(size: 44, weight: .ultraLight))
+                    .foregroundColor(phaseColor.opacity(pulse ? 0.95 : 0.55))
+                    .scaleEffect(pulse ? 1.04 : 1.0)
+
+                // フェーズラベル
+                Text(phaseLabel)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(2)
+
+                // 進捗リング + 巨大タイマー
+                ZStack {
+                    Circle()
+                        .stroke(phaseColor.opacity(0.12), lineWidth: 8)
+                        .frame(width: 320, height: 320)
+
+                    Circle()
+                        .trim(from: 0, to: phaseProgress)
+                        .stroke(phaseColor.opacity(0.85),
+                                style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                        .frame(width: 320, height: 320)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.5), value: phaseProgress)
+
+                    Text(formatTime(timer.remainingSeconds))
+                        .font(.system(size: 110, weight: .ultraLight, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if timer.isRunning { timer.pause() } else { timer.start() }
+                        }
+                }
+
+                // ローテーションするウェルネスメッセージ
+                Text(currentWellness)
+                    .font(.system(size: 17, weight: .light))
+                    .foregroundColor(.primary.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+                    .padding(.horizontal, 24)
+                    .id(wellnessIndex)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                // 主メッセージ
+                Text(String(localized: "breakLock.message"))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .multilineTextAlignment(.center)
+
+                // 長押しスキップ
+                HoldToSkipButton(holdSeconds: 1.5) {
+                    timer.skip()
+                    onSkip()
+                }
+                .padding(.top, 8)
+            }
+            .padding(60)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+                pulse.toggle()
+            }
+            // 30秒ごとにウェルネスメッセージを切替
+            wellnessTimer?.invalidate()
+            wellnessTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+                Task { @MainActor in
+                    withAnimation(.easeInOut(duration: 0.6)) {
+                        wellnessIndex += 1
+                    }
+                }
+            }
+        }
+        .onDisappear {
+            wellnessTimer?.invalidate()
+            wellnessTimer = nil
+        }
+        // 背後への入力を完全にブロック
+        .contentShape(Rectangle())
+        .onTapGesture { /* 吸収 */ }
+    }
+}
+
+// MARK: - Minimal Window (Borderless Child)
+
+/// ミニマル表示用の独立 borderless 浮遊ウィンドウ
+@MainActor
+final class MinimalWindowController: ObservableObject {
+    private var window: NSWindow?
+    private var observers: [NSObjectProtocol] = []
+    private static let frameKey = "minimal_window_frame"
+    static let fixedSize = NSSize(width: 220, height: 140)
+
+    func show(timer: PomodoroTimer, taskListVM: TaskListViewModel, onExit: @escaping () -> Void) {
+        if let existing = window {
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // 固定サイズ、ユーザはリサイズ不可。位置だけ記憶
+        let frame = NSRect(origin: savedOrigin() ?? defaultOrigin(), size: Self.fixedSize)
+
+        let win = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.hasShadow = true
+        // 起動時の pin 状態を適用
+        let pinned = UserDefaults.standard.object(forKey: "minimalIsPinned") as? Bool ?? true
+        win.level = pinned ? .floating : .normal
+        win.isMovable = true
+        win.isMovableByWindowBackground = true
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        win.isReleasedWhenClosed = false
+        win.acceptsMouseMovedEvents = true
+        // borderless でもキーになれるように
+        win.standardWindowButton(.closeButton)?.isHidden = true
+        win.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        win.standardWindowButton(.zoomButton)?.isHidden = true
+
+        let view = MinimalTimerView(
+            timer: timer,
+            taskListVM: taskListVM,
+            onExit: onExit
+        )
+        let host = NSHostingView(rootView: view)
+        host.frame = NSRect(origin: .zero, size: frame.size)
+        host.autoresizingMask = [.width, .height]
+        win.contentView = host
+
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        // フレーム永続化
+        let moveObs = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification, object: win, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.persistFrame() }
+        }
+        let resizeObs = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification, object: win, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.persistFrame() }
+        }
+        observers = [moveObs, resizeObs]
+
+        self.window = win
+    }
+
+    func hide() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
+        window?.orderOut(nil)
+        window = nil
+    }
+
+    private func persistFrame() {
+        guard let frame = window?.frame else { return }
+        // 位置のみ記憶（サイズは固定）
+        let arr = [Double(frame.origin.x), Double(frame.origin.y)]
+        UserDefaults.standard.set(arr, forKey: Self.frameKey)
+    }
+
+    private func savedOrigin() -> NSPoint? {
+        guard let arr = UserDefaults.standard.array(forKey: Self.frameKey) as? [Double],
+              arr.count >= 2 else { return nil }
+        let point = NSPoint(x: arr[0], y: arr[1])
+        // 画面内チェック
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let rect = NSRect(origin: point, size: Self.fixedSize)
+        if !screen.intersects(rect) { return nil }
+        return point
+    }
+
+    private func defaultOrigin() -> NSPoint {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        // 画面右上に控えめに配置
+        return NSPoint(
+            x: screen.maxX - Self.fixedSize.width - 24,
+            y: screen.maxY - Self.fixedSize.height - 24
+        )
+    }
+}
+
+/// ミニマルウィンドウのコンテンツビュー
+struct MinimalTimerView: View {
+    @ObservedObject var timer: PomodoroTimer
+    @ObservedObject var taskListVM: TaskListViewModel
+    let onExit: () -> Void
+
+    @State private var hovering: Bool = false
+    @AppStorage("minimalIsPinned") private var isPinned: Bool = true
+
+    private var phaseColor: Color {
+        switch timer.currentPhase {
+        case .work: return .blue
+        case .break_: return .green
+        case .longBreak: return .purple
+        }
+    }
+
+    private var phaseProgress: Double {
+        let total: Int
+        switch timer.currentPhase {
+        case .work: total = timer.workDuration
+        case .break_: total = timer.breakDuration
+        case .longBreak: total = timer.longBreakDuration
+        }
+        guard total > 0 else { return 0 }
+        return 1.0 - (Double(timer.remainingSeconds) / Double(total))
+    }
+
+    private var phaseLabel: String {
+        switch timer.currentPhase {
+        case .work:
+            return String(localized: "phase.work \(timer.sessionPomodoros + 1) \(timer.pomodorosUntilLongBreak)")
+        case .break_:
+            return String(localized: "phase.break \(timer.sessionPomodoros + 1) \(timer.pomodorosUntilLongBreak)")
+        case .longBreak:
+            return String(localized: "phase.longBreak")
+        }
+    }
+
+    private func formatTime(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%02d:%02d", mins, secs)
+    }
+
+    var body: some View {
+        ZStack {
+            // 角丸の背景 (window 自体が透明なので、ここで形を作る)
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(phaseColor.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                )
+
+            // メインコンテンツ
+            VStack(spacing: 4) {
+                Spacer(minLength: 6)
+
+                // 巨大タイマー
+                Text(formatTime(timer.remainingSeconds))
+                    .font(.system(size: 52, weight: .ultraLight, design: .monospaced))
+                    .foregroundColor(timer.isRunning ? .primary : .primary.opacity(0.5))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleTimer() }
+
+                // タスク名 or フェーズラベル
+                Group {
+                    if timer.currentPhase == .work, let task = taskListVM.currentTask {
+                        Text(task.title)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text(phaseLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(phaseColor.opacity(0.85))
+                            .textCase(.uppercase)
+                            .tracking(1.2)
+                    }
+                }
+                .padding(.horizontal, 12)
+
+                Spacer(minLength: 6)
+
+                // 底辺の極細プログレスバー
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 2)
+                        Capsule()
+                            .fill(phaseColor.opacity(0.7))
+                            .frame(width: geo.size.width * phaseProgress, height: 2)
+                            .animation(.linear(duration: 0.5), value: phaseProgress)
+                    }
+                }
+                .frame(height: 2)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
+            }
+
+            // 右上のホバーコントロール (pin + exit)
+            VStack {
+                HStack(spacing: 4) {
+                    Spacer()
+                    // Pin トグル
+                    Button(action: { togglePin() }) {
+                        Image(systemName: isPinned ? "pin.fill" : "pin")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(isPinned ? .accentColor : .secondary)
+                            .frame(width: 18, height: 18)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(String(localized: "tooltip.minimalPin"))
+                    .opacity(hovering ? 1.0 : 0)
+                    .animation(.easeOut(duration: 0.15), value: hovering)
+
+                    // Exit ボタン
+                    Button(action: onExit) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .help(String(localized: "tooltip.exitMinimal"))
+                    .opacity(hovering ? 1.0 : 0)
+                    .animation(.easeOut(duration: 0.15), value: hovering)
+                }
+                Spacer()
+            }
+            .padding(6)
+
+            // キーボードショートカット (非表示ボタン)
+            minimalShortcuts
+        }
+        .onHover { hovering = $0 }
+        .onAppear { applyPinState() }
+        .onChange(of: isPinned) { _, _ in applyPinState() }
+    }
+
+    private func togglePin() {
+        isPinned.toggle()
+    }
+
+    private func applyPinState() {
+        // ミニマルウィンドウの NSWindow を見つけて level を更新
+        for win in NSApp.windows where win.styleMask.contains(.borderless) && win.contentView is NSHostingView<MinimalTimerView> {
+            win.level = isPinned ? .floating : .normal
+        }
+    }
+
+    private func toggleTimer() {
+        if timer.isRunning { timer.pause() } else { timer.start() }
+    }
+
+    private var minimalShortcuts: some View {
+        Group {
+            Button("") { toggleTimer() }
+                .keyboardShortcut("p", modifiers: .command)
+            Button("") {
+                // ミニマル時は集中保護のためモーダル無しでカスケード完了 + 自動遷移
+                if let task = taskListVM.currentTask {
+                    taskListVM.completeTask(id: task.id)
+                    _ = taskListVM.autoCompleteParentIfReady(for: task.id)
+                    if taskListVM.currentTaskId == nil {
+                        taskListVM.advanceToNextTask()
+                    }
+                }
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            Button("") {
+                taskListVM.postponeCurrentTask()
+            }
+            .keyboardShortcut("l", modifiers: .command)
+            Button("") {
+                timer.skip()
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            Button("") {
+                timer.resetCycle()
+            }
+            .keyboardShortcut("r", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 }

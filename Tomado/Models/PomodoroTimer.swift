@@ -317,6 +317,14 @@ public class PomodoroTimer: ObservableObject {
 
         UserDefaults.standard.set(totalPausedDuration, forKey: "pomodoro_total_paused_duration")
 
+        // pausedAt を永続化（再起動後も「アプリを閉じていた時間 = 一時停止時間」として扱える）
+        if let pausedAt = pausedAt {
+            UserDefaults.standard.set(
+                pausedAt.timeIntervalSince1970, forKey: "pomodoro_paused_at")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pomodoro_paused_at")
+        }
+
         // 累積作業時間を保存
         saveAccumulatedWorkTime()
     }
@@ -366,11 +374,44 @@ public class PomodoroTimer: ObservableObject {
                 forKey: "pomodoro_total_paused_duration")
         }
 
+        // pausedAt を復元（再起動後の resume で正しく経過時間を補正できる）
+        if let pausedAtInterval = UserDefaults.standard.object(forKey: "pomodoro_paused_at") as? TimeInterval {
+            pausedAt = Date(timeIntervalSince1970: pausedAtInterval)
+        }
+
         // 累積作業時間を復元
         loadAccumulatedWorkTime()
 
         // 安全のため、復元時は常にタイマーを停止状態にする
         isRunning = false
+
+        // 復元後の整合性チェック: phaseStartTime があるが remainingSeconds が phaseDuration を
+        // 既に超えるほど経過しているなら、タイマーをクリーンな停止状態に戻す
+        // （つまり次の start() でフェーズ完了になる事故を防ぐ）
+        sanitizeRestoredState()
+    }
+
+    /// 復元したタイマー状態が現実的かを確認、不整合なら安全な停止状態に戻す
+    private func sanitizeRestoredState() {
+        guard let startTime = phaseStartTime else { return }
+        let phaseDur: Int
+        switch currentPhase {
+        case .work: phaseDur = workDuration
+        case .break_: phaseDur = breakDuration
+        case .longBreak: phaseDur = longBreakDuration
+        }
+        // pausedAt 以降は一時停止扱い (実質 totalPausedDuration を増やしたのと同等)
+        // 経過時間 = (pausedAt があれば pausedAt まで) - phaseStartTime - totalPausedDuration
+        let endReference: Date = pausedAt ?? Date()
+        let elapsed = endReference.timeIntervalSince(startTime) - totalPausedDuration
+        // remainingSeconds が現実から大きく乖離している場合は phaseStartTime をリセット
+        let computedRemaining = max(0, phaseDur - Int(elapsed))
+        if abs(computedRemaining - remainingSeconds) > 5 {
+            // 不整合 → remainingSeconds を信頼してフェーズタイムスタンプをリセット
+            phaseStartTime = nil
+            totalPausedDuration = 0
+            pausedAt = nil
+        }
     }
 
     // MARK: - Static Settings Access

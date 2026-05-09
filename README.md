@@ -1,5 +1,7 @@
 # Tomado
 
+<img src="docs/feature.png" alt="Tomado - A minimalist Pomodoro timer that gets out of your way">
+
 A minimalist Pomodoro timer with task management for macOS.
 
 > **Tomado** = **Toma**to + To**do** + **ma**rk**do**wn
@@ -19,10 +21,15 @@ A minimalist Pomodoro timer with task management for macOS.
 
 - **Pomodoro Timer**: Work sessions, short breaks, and long breaks with customizable durations
 - **Task Management**: Simple task list with priority levels (!, !!, !!!)
+- **Task Notes**: Attach context to a task via indented bullets (`-` lines under a task)
 - **Subtasks**: Organize tasks hierarchically with drag & drop
+- **Auto-cascade**: Confirmation modal when completing a parent with incomplete subtasks; auto-completes parent when all subtasks done; auto-advances to next task on completion
 - **View Modes**: Toggle between separated view and hierarchy view
+- **Minimal Mode**: Compact floating window showing only the timer — small, draggable, optionally always-on-top
+- **Strict Break**: Optional fullscreen break overlay with rotating wellness reminders, hold-to-skip
+- **Quick Capture**: Capture stray thoughts mid-focus without breaking flow (⌘⇧I)
 - **Keyboard-First**: Comprehensive keyboard shortcuts for all actions
-- **Import/Export**: Copy tasks from/to clipboard with indentation support
+- **Import/Export**: Markdown-based clipboard import/export with hierarchy and notes
 - **Localization**: English and Japanese support
 
 ## Screenshot
@@ -38,10 +45,12 @@ A minimalist Pomodoro timer with task management for macOS.
 | ⌘L | Postpone current task |
 | ⌘S | Skip current phase |
 | ⌘R | Reset cycle |
-| ⌘⇧S | Sort by priority |
+| ⌘⇧M | Toggle minimal window mode |
+| ⌘⇧T | Toggle timer preset (🐇/🐢) |
 | ⌘⇧V | Toggle view mode |
-| ⌘⇧T | Toggle timer preset |
+| ⌘⇧S | Sort by priority |
 | ⌘⇧P | Toggle topmost |
+| ⌘⇧I | Quick Capture (capture without breaking focus) |
 | ⌘⌫ | Delete completed tasks |
 | ⌘⇧⌫ | Delete all tasks |
 | ⌘V | Import from clipboard |
@@ -85,7 +94,12 @@ Tasks use Markdown checkbox format. Priority is indicated by trailing `!` marks.
 - [ ] High priority task !!!
 - [x] Completed task
   - [ ] Subtask (indented)
+- [ ] Task with notes
+  - This is contextual note attached to the task
+  - Another line of note
 ```
+
+Indented bullets without checkboxes (and quote lines with `>`) are imported as **notes** attached to the parent task.
 
 With "Allow list format" enabled in settings:
 ```markdown
@@ -94,15 +108,19 @@ With "Allow list format" enabled in settings:
 * Asterisk list item
 ```
 
+Note: enabling "Allow list format" makes indented `-` bullets become subtasks rather than notes. Disable it to use notes.
+
 **Export format:**
 
 ```markdown
 - [ ] Task !!
   - [ ] Subtask
 - [x] Completed task !!!
+- [ ] Task with notes
+  - Contextual note
 ```
 
-Note: Subtasks inherit priority from their parent (no `!` marks).
+Note: Subtasks inherit priority from their parent (no `!` marks). Notes are exported as indented bullets under their task.
 
 Indent style (spaces/tab) is configurable in settings.
 
@@ -149,10 +167,15 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 
 - **ポモドーロタイマー**: 作業・短い休憩・長い休憩のカスタマイズ可能なタイマー
 - **タスク管理**: 優先度付き（!, !!, !!!）のシンプルなタスクリスト
+- **タスクメモ**: タスク配下のインデント `-` 行を文脈メモとして保持
 - **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理
+- **自動カスケード**: 親タスク完了時に未完了サブタスクがあれば確認モーダル。全サブタスク完了時は親も自動完了。完了後は次の未完了タスクへ自動遷移
 - **ビューモード**: 分離ビューと階層ビューを切り替え
+- **ミニマルモード**: タイマーだけの小さな浮遊ウィンドウ。ドラッグ移動可、最前面固定オプション
+- **厳格な休憩**: 休憩中に全画面オーバーレイ + ローテーションするウェルネス提示 + 長押しスキップ
+- **クイックキャプチャ**: 集中を切らずに浮かんだ思考を即座に記録 (⌘⇧I)
 - **キーボード操作**: すべての操作にショートカットキー対応
-- **インポート/エクスポート**: クリップボード経由でタスクをコピー（インデント対応）
+- **インポート/エクスポート**: Markdown 形式でクリップボード経由 (階層 + メモ対応)
 - **多言語対応**: 英語・日本語に対応
 
 ## スクリーンショット
@@ -168,10 +191,12 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 | ⌘L | 現在のタスクを後回し |
 | ⌘S | フェーズをスキップ |
 | ⌘R | サイクルをリセット |
-| ⌘⇧S | 優先度順にソート |
+| ⌘⇧M | ミニマルウィンドウ切替 |
+| ⌘⇧T | タイマープリセット切替 (🐇/🐢) |
 | ⌘⇧V | ビューモード切替 |
-| ⌘⇧T | タイマープリセット切替 |
+| ⌘⇧S | 優先度順にソート |
 | ⌘⇧P | 最前面固定切替 |
+| ⌘⇧I | クイックキャプチャ (集中を切らずに記録) |
 | ⌘⌫ | 完了タスクを削除 |
 | ⌘⇧⌫ | すべてのタスクを削除 |
 | ⌘V | クリップボードからインポート |
@@ -216,7 +241,12 @@ Markdownチェックボックス形式を使用。優先度は末尾の `!` で�
 - [ ] 高優先度タスク !!!
 - [x] 完了したタスク
   - [ ] サブタスク（インデント）
+- [ ] メモ付きタスク
+  - これはタスクの文脈メモ
+  - 別の行のメモ
 ```
+
+チェックボックスのないインデント `-` 行（または `>` 引用行）は親タスクのメモとしてインポートされます。
 
 設定で「リスト形式を許可」を有効にすると：
 
@@ -226,15 +256,19 @@ Markdownチェックボックス形式を使用。優先度は末尾の `!` で�
 * アスタリスクリスト
 ```
 
+注: 「リスト形式を許可」をONにすると、インデントされた `-` 行はメモではなくサブタスクとしてインポートされます。メモ機能を使うにはOFFにしてください。
+
 **エクスポート形式：**
 
 ```markdown
 - [ ] タスク !!
   - [ ] サブタスク
 - [x] 完了タスク !!!
+- [ ] メモ付きタスク
+  - 文脈メモ
 ```
 
-※サブタスクは親の優先度を継承（`!` マークなし）
+※サブタスクは親の優先度を継承（`!` マークなし）。メモはタスク配下のインデント `-` 行として出力されます。
 
 インデントスタイル（スペース/タブ）は設定で変更可能。
 

@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
     "・%lld🍅" : {
 
     },
@@ -17,8 +20,75 @@
     "%lld🍅" : {
 
     },
+    ">" : {
+
+    },
     "▶" : {
 
+    },
+    "alert.completeWithSubtasks.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complete subtasks too?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブタスクも完了にしますか？"
+          }
+        }
+      }
+    },
+    "alert.completeWithSubtasks.message %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This task has %lld incomplete subtask(s). Mark them all as complete?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了のサブタスクが %lld 個あります。すべて完了にしますか？"
+          }
+        }
+      }
+    },
+    "button.completeAll" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complete All"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて完了"
+          }
+        }
+      }
+    },
+    "toast.parentAutoCompleted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parent task auto-completed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "親タスクも自動完了"
+          }
+        }
+      }
     },
     "alert.clearAll.message" : {
       "localizations" : {
@@ -84,6 +154,38 @@
         }
       }
     },
+    "breakLock.holdToSkip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold to skip"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "長押しでスキップ"
+          }
+        }
+      }
+    },
+    "breakLock.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step away from work."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作業から離れて休もう"
+          }
+        }
+      }
+    },
     "button.cancel" : {
       "localizations" : {
         "en" : {
@@ -116,22 +218,6 @@
         }
       }
     },
-    "button.uncomplete" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mark as Incomplete"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未完了に戻す"
-          }
-        }
-      }
-    },
     "button.makeIndependent" : {
       "localizations" : {
         "en" : {
@@ -148,6 +234,214 @@
         }
       }
     },
+    "quickCapture.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャプチャ"
+          }
+        }
+      }
+    },
+    "quickCapture.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What just came to mind?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今よぎったことを書き留めよう"
+          }
+        }
+      }
+    },
+    "quickCapture.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⏎ to save, esc to discard"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⏎ で保存、esc で破棄"
+          }
+        }
+      }
+    },
+    "menu.pin" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin to Front"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最前面に固定"
+          }
+        }
+      }
+    },
+    "menu.unpin" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpin"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定解除"
+          }
+        }
+      }
+    },
+    "menu.quickCapture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick Capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クイックキャプチャ"
+          }
+        }
+      }
+    },
+    "menu.import" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import from Clipboard"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリップボードからインポート"
+          }
+        }
+      }
+    },
+    "menu.export" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export to Clipboard"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリップボードにエクスポート"
+          }
+        }
+      }
+    },
+    "menu.clearCompleted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Completed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了タスクを削除"
+          }
+        }
+      }
+    },
+    "menu.clearAll" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Tasks"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのタスクを削除"
+          }
+        }
+      }
+    },
+    "tooltip.timerPreset" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🐇 Short Focus (12+3): for varied tasks, admin, learning new domains, recovery from fatigue.\n🐢 Deep Focus (35+10): for deep work — writing, coding, complex reading, when in flow.\n⌘⇧T to toggle."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🐇 ショートフォーカス (12+3): 雑多なタスク、事務作業、新しい分野の学習、疲労回復に。\n🐢 ディープフォーカス (35+10): 深い集中が必要な作業 — 執筆、コーディング、読解、フロー状態の維持に。\n⌘⇧T で切替。"
+          }
+        }
+      }
+    },
+    "tooltip.quickCapture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick Capture (⌘⇧I)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クイックキャプチャ (⌘⇧I)"
+          }
+        }
+      }
+    },
+    "toast.captured" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Captured to inbox"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インボックスに保存"
+          }
+        }
+      }
+    },
     "button.save" : {
       "localizations" : {
         "en" : {
@@ -160,6 +454,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存"
+          }
+        }
+      }
+    },
+    "button.uncomplete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark as Incomplete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完了に戻す"
           }
         }
       }
@@ -204,13 +514,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter task... (Enter=!!, ⇧=!, ⌘=!!!)"
+            "value" : "Add a task…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "タスクを入力... (Enter=!!, ⇧=!, ⌘=!!!)"
+            "value" : "タスクを追加…"
           }
         }
       }
@@ -279,7 +589,56 @@
         }
       }
     },
+    "settings.breakLock" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strict Break"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "厳格な休憩"
+          }
+        }
+      }
+    },
+    "settings.breakLock.enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock UI during breaks"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "休憩中にUIをロック"
+          }
+        }
+      }
+    },
+    "settings.breakLock.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Covers the window during breaks. Window is forced to top, and skipping requires a hold."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "休憩中はウィンドウ全体をオーバーレイで覆い、最前面に固定します。スキップは長押しが必要です。"
+          }
+        }
+      }
+    },
     "settings.cycle %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -291,6 +650,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "サイクル: %lld"
+          }
+        }
+      }
+    },
+    "settings.deepFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deep Focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディープフォーカス"
           }
         }
       }
@@ -412,13 +787,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When enabled, \"- text\" or \"1. text\" formats can also be imported"
+            "value" : "When enabled, \"- text\" or \"1. text\" formats can also be imported as tasks"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ONにすると「- テキスト」や「1. テキスト」形式もインポート可能"
+            "value" : "ONにすると「- テキスト」や「1. テキスト」形式もタスクとしてインポート可能"
+          }
+        }
+      }
+    },
+    "settings.import.allowList.tradeoff" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note: When enabled, indented bullets are imported as tasks rather than as notes attached to the parent task. Disable to use the notes feature."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注: ONの場合、インデントされた箇条書きは親タスクのメモではなくサブタスクとしてインポートされます。メモ機能を使うにはOFFにしてください。"
           }
         }
       }
@@ -508,18 +899,34 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌘⇧S Sort  ⌘⌫ Clear Done  ⌘⇧⌫ Clear All  ⌘V Import  ⌘C Export"
+            "value" : "⌘⇧M Minimal  ⌘⇧T 🐇/🐢  ⌘⇧V View  ⌘⇧S Sort  ⌘⇧P Pin"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌘⇧S ソート  ⌘⌫ 完了削除  ⌘⇧⌫ 全削除  ⌘V 読込  ⌘C 書出"
+            "value" : "⌘⇧M ミニマル  ⌘⇧T 🐇/🐢  ⌘⇧V ビュー  ⌘⇧S ソート  ⌘⇧P 最前面"
           }
         }
       }
     },
     "settings.shortcuts.row3" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌘⇧I Capture  ⌘V Import  ⌘C Export  ⌘⌫ Clear Done  ⌘⇧⌫ Clear All"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌘⇧I キャプチャ  ⌘V 読込  ⌘C 書出  ⌘⌫ 完了削除  ⌘⇧⌫ 全削除"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.row4" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -531,6 +938,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter !!追加  ⇧Enter !追加  ⌘Enter !!!追加"
+          }
+        }
+      }
+    },
+    "settings.shortFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Short Focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ショートフォーカス"
           }
         }
       }
@@ -631,39 +1054,8 @@
         }
       }
     },
-    "settings.shortFocus" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Short Focus"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ショートフォーカス"
-          }
-        }
-      }
-    },
-    "settings.deepFocus" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deep Focus"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディープフォーカス"
-          }
-        }
-      }
-    },
     "settings.timer" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -759,6 +1151,22 @@
         }
       }
     },
+    "toast.deepFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deep Focus (35 min)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "深集中（35分）"
+          }
+        }
+      }
+    },
     "toast.exported" : {
       "localizations" : {
         "en" : {
@@ -791,6 +1199,118 @@
         }
       }
     },
+    "toast.minimalOff" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通常表示"
+          }
+        }
+      }
+    },
+    "wellness.eyes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Look at something 20 feet away for 20 seconds."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "20秒間、6m先のものを眺めよう。"
+          }
+        }
+      }
+    },
+    "wellness.stand" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stand up and walk a few steps."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立ち上がって少し歩いてみよう。"
+          }
+        }
+      }
+    },
+    "wellness.shoulders" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Roll your shoulders. Stretch your neck."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "肩を回して首を伸ばそう。"
+          }
+        }
+      }
+    },
+    "wellness.hydrate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drink some water."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "水を一口飲もう。"
+          }
+        }
+      }
+    },
+    "wellness.breathe" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take three deep breaths."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "深呼吸を3回しよう。"
+          }
+        }
+      }
+    },
+    "toast.minimalOn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ミニマル表示"
+          }
+        }
+      }
+    },
     "toast.postponed" : {
       "localizations" : {
         "en" : {
@@ -819,6 +1339,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "リセットしました"
+          }
+        }
+      }
+    },
+    "toast.shortFocus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Short Focus (12 min)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "短集中（12分）"
           }
         }
       }
@@ -887,6 +1423,38 @@
         }
       }
     },
+    "toast.topmostOff" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal window"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通常ウィンドウ"
+          }
+        }
+      }
+    },
+    "toast.topmostOn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always on top"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最前面固定"
+          }
+        }
+      }
+    },
     "toast.viewHierarchy" : {
       "localizations" : {
         "en" : {
@@ -919,66 +1487,34 @@
         }
       }
     },
-    "toast.shortFocus" : {
+    "tooltip.minimalPin" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Short Focus (12 min)"
+            "value" : "Toggle always-on-top"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "短集中（12分）"
+            "value" : "最前面固定の切替"
           }
         }
       }
     },
-    "toast.deepFocus" : {
+    "tooltip.exitMinimal" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deep Focus (35 min)"
+            "value" : "Exit minimal mode (⌘⇧M)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "深集中（35分）"
-          }
-        }
-      }
-    },
-    "toast.topmostOn" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Always on top"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最前面固定"
-          }
-        }
-      }
-    },
-    "toast.topmostOff" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Normal window"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通常ウィンドウ"
+            "value" : "ミニマル表示を終了 (⌘⇧M)"
           }
         }
       }
