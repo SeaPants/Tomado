@@ -564,18 +564,18 @@ struct FocusedMainView: View {
     }
 
     private func minimalToggleButton() -> some View {
+        // このボタンは standard layout のフッターにしか存在しない（minimal 時はメインが隠れる）
+        // ので、アイコンは常に「縮小 (compress)」固定で正しい
         let isPressed = pressedButton == "minimal"
-        // Standard モードでのみ表示されるので常に false 想定で良いが、念のため AppDelegate から取得
-        let inMinimal = TomadoAppDelegate.shared?.isMinimalMode ?? false
         return Button(action: {
             flashButton("minimal")
             toggleMinimal()
         }) {
-            Image(systemName: inMinimal ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+            Image(systemName: "rectangle.compress.vertical")
                 .font(.caption)
         }
         .buttonStyle(.plain)
-        .foregroundColor(inMinimal ? .accentColor : .secondary)
+        .foregroundColor(.secondary)
         .scaleEffect(isPressed ? 1.3 : 1.0)
         .animation(.easeOut(duration: 0.1), value: isPressed)
     }
@@ -2015,13 +2015,25 @@ struct MinimalTimerView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { toggleTimer() }
 
-                // タスク名 or フェーズラベル
+                // タスク名 (サブタスクなら直接の親も薄く prefix) or フェーズラベル
                 Group {
                     if timer.currentPhase == .work, let task = taskListVM.currentTask {
-                        Text(task.title)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            if let parent = directParentTitle(for: task) {
+                                Text(parent)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary.opacity(0.4))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text("▸")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary.opacity(0.3))
+                            }
+                            Text(task.title)
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
                     } else {
                         Text(phaseLabel)
                             .font(.system(size: 10, weight: .medium))
@@ -2107,6 +2119,15 @@ struct MinimalTimerView: View {
 
     private func toggleTimer() {
         if timer.isRunning { timer.pause() } else { timer.start() }
+    }
+
+    /// 直接の親タスクのタイトル (なければ nil)
+    private func directParentTitle(for task: TodoTask) -> String? {
+        guard let parentId = task.parentId,
+              let parent = taskListVM.taskList.tasks.first(where: { $0.id == parentId }) else {
+            return nil
+        }
+        return parent.title
     }
 
     private var minimalShortcuts: some View {

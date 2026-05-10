@@ -11,25 +11,26 @@ public struct TaskList: Codable {
     }
 
     /// 優先度順でソート（サブタスクは親と一緒に移動、実行順で並べる）
+    /// 同じ優先度の場合は元の順序を維持（stable sort、ユーザの手動順序を尊重）
     /// ascending: falseなら優先度が高い順、trueなら低い順
     public mutating func sort(ascending: Bool = false) {
         let incomplete = tasks.filter { !$0.isCompleted }
         let completed = tasks.filter { $0.isCompleted }
 
-        // ルートタスクをソート
-        let sortedRoots = incomplete.filter { $0.isRoot }
-            .sorted { root1, root2 in
-                // 優先度が違えば優先度順
-                if root1.priority.rawValue != root2.priority.rawValue {
+        // ルートタスクをソート（同優先度時は元の順序を維持: indexed sort で stable に）
+        let indexedRoots = incomplete.filter { $0.isRoot }.enumerated()
+            .map { (index: $0.offset, task: $0.element) }
+        let sortedRoots = indexedRoots
+            .sorted { lhs, rhs in
+                if lhs.task.priority.rawValue != rhs.task.priority.rawValue {
                     return ascending
-                        ? root1.priority.rawValue < root2.priority.rawValue
-                        : root1.priority.rawValue > root2.priority.rawValue
+                        ? lhs.task.priority.rawValue < rhs.task.priority.rawValue
+                        : lhs.task.priority.rawValue > rhs.task.priority.rawValue
                 }
-                // 同じ優先度ならサブタスク数が少ない順（早く終わる順）
-                let subtaskCount1 = countAllSubtasks(for: root1.id, from: incomplete)
-                let subtaskCount2 = countAllSubtasks(for: root2.id, from: incomplete)
-                return subtaskCount1 < subtaskCount2
+                // tie: 元の順序を維持
+                return lhs.index < rhs.index
             }
+            .map { $0.task }
 
         // 各ルートタスクとそのサブタスクを実行順（サブタスク→親）で並べる
         var sorted: [TodoTask] = []
@@ -47,16 +48,6 @@ public struct TaskList: Codable {
 
         tasks = sorted + completed
         lastModified = Date()
-    }
-
-    /// 指定タスクの全サブタスク数を再帰的にカウント
-    private func countAllSubtasks(for parentId: String, from tasks: [TodoTask]) -> Int {
-        let directChildren = tasks.filter { $0.parentId == parentId }
-        var count = directChildren.count
-        for child in directChildren {
-            count += countAllSubtasks(for: child.id, from: tasks)
-        }
-        return count
     }
 
     /// 指定した親のサブタスクを実行順（深い順）で取得
