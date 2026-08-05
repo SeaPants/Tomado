@@ -9,6 +9,12 @@ public class TaskListViewModel: ObservableObject {
 
     private let storageURL: URL
 
+    /// ソート前の手動順序スナップショット（ソート状態を解除したときに復元する）
+    private static let manualOrderKey = "manualTaskOrder"
+
+    /// タイマーから届く端数ポモドーロを蓄積し、1.0 を超えたら実績に繰り上げる
+    private var fractionalPomodoros: [String: Double] = [:]
+
     public init() {
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -16,6 +22,36 @@ public class TaskListViewModel: ObservableObject {
         try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
         self.storageURL = appDir.appendingPathComponent("tasks.json")
         load()
+        observePomodoroProgress()
+    }
+
+    /// タイマーが記録した作業時間をタスクの実績ポモドーロに反映する
+    /// （ViewModel はアプリと同じ寿命なので明示的な removeObserver は不要）
+    private func observePomodoroProgress() {
+        NotificationCenter.default.addObserver(
+            forName: .pomodoroProgressByTaskId, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let taskId = note.userInfo?["taskId"] as? String,
+                  let amount = note.userInfo?["elapsedPomodoros"] as? Double else { return }
+            Task { @MainActor in
+                self?.addPomodoroProgress(amount, toTaskId: taskId)
+            }
+        }
+    }
+
+    /// 端数を含む進捗を加算し、1ポモドーロ分たまるごとに実績を +1 する
+    public func addPomodoroProgress(_ amount: Double, toTaskId taskId: String) {
+        guard amount > 0, taskList.tasks.contains(where: { $0.id == taskId }) else { return }
+
+        let accumulated = (fractionalPomodoros[taskId] ?? 0) + amount
+        // 浮動小数の誤差で 0.99999… が 0 に落ちないよう、ごく小さい許容を足す
+        let whole = Int(accumulated + 1e-9)
+        fractionalPomodoros[taskId] = accumulated - Double(whole)
+
+        guard whole > 0, let index = taskList.tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        taskList.tasks[index].pomodoros += whole
+        taskList.lastModified = Date()
+        save()
     }
 
     // MARK: - Task Operations
@@ -49,15 +85,65 @@ public class TaskListViewModel: ObservableObject {
     }
 
     /// 優先度に基づいて挿入位置を決定（ルートタスクのみ対象）
+    /// 挿入先は対象ルートの「サブツリー先頭」なので、他タスクのサブツリー内部には入り込まない
     private func findInsertIndex(for priority: Priority) -> Int {
-        let incomplete = taskList.tasks.enumerated().filter { !$0.element.isCompleted && $0.element.isRoot }
-        for (index, task) in incomplete {
+        for task in taskList.tasks where !task.isCompleted && task.isRoot {
             if task.priority.rawValue < priority.rawValue {
-                return index
+                return subtreeStartIndex(of: task.id) ?? taskList.tasks.count
             }
         }
-        // 未完了タスクの末尾
-        return taskList.tasks.firstIndex { $0.isCompleted } ?? taskList.tasks.count
+        // 未完了タスクの末尾（完了タスクの直前）
+        return endOfIncompleteIndex()
+    }
+
+    /// 未完了タスクの直後（＝完了ブロックの先頭）の index
+    /// 「完了タスクは末尾に固まっている」という前提に依存しないので、順序が乱れていても安全
+    private func endOfIncompleteIndex() -> Int {
+        taskList.tasks.lastIndex(where: { !$0.isCompleted }).map { $0 + 1 } ?? 0
+    }
+
+    /// 指定タスクのサブツリー（本人＋子孫）が配列内で最初に現れる位置
+    private func subtreeStartIndex(of taskId: String) -> Int? {
+        let ids = Set(getSubtaskIds(for: taskId) + [taskId])
+        return taskList.tasks.firstIndex { ids.contains($0.id) }
+    }
+
+    /// サブツリーを実行順（深い子孫 → 本人）で構築
+    private func subtreeInExecutionOrder(_ taskId: String) -> [TodoTask] {
+        var result: [TodoTask] = []
+        for child in taskList.tasks where child.parentId == taskId {
+            result.append(contentsOf: subtreeInExecutionOrder(child.id))
+        }
+        if let task = taskList.tasks.first(where: { $0.id == taskId }) {
+            result.append(task)
+        }
+        return result
+    }
+
+    /// サブツリーを一塊のまま配列内で移動する
+    /// - Parameter resolveIndex: 移動対象を取り除いた後の配列における挿入位置を返す
+    private func relocateSubtree(_ taskId: String, insertingAt resolveIndex: () -> Int) {
+        let block = subtreeInExecutionOrder(taskId)
+        guard !block.isEmpty else { return }
+        let ids = Set(block.map { $0.id })
+        taskList.tasks.removeAll { ids.contains($0.id) }
+
+        let insertAt = resolveIndex()
+        taskList.tasks.insert(contentsOf: block, at: min(max(insertAt, 0), taskList.tasks.count))
+    }
+
+    /// 対象タスクの「サブツリー先頭」の直前へ移動する（＝表示上その行の真上に来る）
+    private func relocateSubtree(_ taskId: String, above anchorId: String?) {
+        relocateSubtree(taskId) {
+            anchorId.flatMap { subtreeStartIndex(of: $0) } ?? endOfIncompleteIndex()
+        }
+    }
+
+    /// 親タスク「そのもの」の直前へ移動する（＝既存の兄弟より後ろ、実行順で末子になる）
+    private func relocateSubtree(_ taskId: String, asLastChildOf parentId: String) {
+        relocateSubtree(taskId) {
+            taskList.tasks.firstIndex { $0.id == parentId } ?? endOfIncompleteIndex()
+        }
     }
 
     /// タスク完了（サブタスクも一緒に完了）
@@ -110,7 +196,7 @@ public class TaskListViewModel: ObservableObject {
         // 未完了に戻したタスクを未完了リストの末尾に移動
         let uncompletedTasks = updatedTasks.filter { idsToUncomplete.contains($0.id) }
         updatedTasks.removeAll { idsToUncomplete.contains($0.id) }
-        let insertIndex = updatedTasks.firstIndex { $0.isCompleted } ?? updatedTasks.count
+        let insertIndex = updatedTasks.lastIndex(where: { !$0.isCompleted }).map { $0 + 1 } ?? 0
         updatedTasks.insert(contentsOf: uncompletedTasks, at: insertIndex)
 
         taskList = TaskList(tasks: updatedTasks, lastModified: Date())
@@ -145,39 +231,49 @@ public class TaskListViewModel: ObservableObject {
 
     /// タスクをサブタスク化（無制限階層対応）
     public func makeSubtask(taskId: String, parentId: String) {
-        guard let taskIndex = taskList.tasks.firstIndex(where: { $0.id == taskId }),
-              let parent = taskList.tasks.first(where: { $0.id == parentId }) else { return }
+        guard taskId != parentId,
+              taskList.tasks.contains(where: { $0.id == taskId }),
+              taskList.tasks.contains(where: { $0.id == parentId }) else { return }
 
         // 循環参照チェック（親が自分の子孫でないことを確認）
         if isDescendant(parentId, of: taskId) { return }
 
-        taskList.tasks[taskIndex].parentId = parentId
-        taskList.tasks[taskIndex].indentLevel = parent.indentLevel + 1
+        reparent(taskId, to: parentId)
+        // 親の直前にサブツリーごと移動（実行順: サブタスク → 親）。
+        // 既にいる兄弟の後ろに付ける＝ドロップした順に上から並ぶ
+        relocateSubtree(taskId, asLastChildOf: parentId)
 
-        // サブタスクも一緒にインデントレベルを更新
-        updateDescendantIndentLevels(for: taskId, baseLevel: parent.indentLevel + 1)
-
-        // 親の直前に移動
-        if let parentIndex = taskList.tasks.firstIndex(where: { $0.id == parentId }) {
-            let task = taskList.tasks.remove(at: taskIndex)
-            let newIndex = taskIndex < parentIndex ? parentIndex - 1 : parentIndex
-            taskList.tasks.insert(task, at: newIndex)
-        }
-
+        invalidateManualOrder()
         taskList.lastModified = Date()
         save()
     }
 
-    /// 指定タスクが別タスクの子孫かどうかをチェック
+    /// タスクの親を付け替え、自分と子孫のインデントレベルを整える（配列順は動かさない）
+    /// - Parameter newParentId: nil ならルート化
+    private func reparent(_ taskId: String, to newParentId: String?) {
+        guard let index = taskList.tasks.firstIndex(where: { $0.id == taskId }) else { return }
+
+        if let newParentId, let parent = taskList.tasks.first(where: { $0.id == newParentId }) {
+            let newLevel = parent.indentLevel + 1
+            taskList.tasks[index].parentId = newParentId
+            taskList.tasks[index].indentLevel = newLevel
+            updateDescendantIndentLevels(for: taskId, baseLevel: newLevel)
+        } else {
+            let oldLevel = taskList.tasks[index].indentLevel
+            taskList.tasks[index].parentId = nil
+            taskList.tasks[index].indentLevel = 0
+            adjustDescendantLevels(for: taskId, levelDiff: -oldLevel)
+        }
+    }
+
+    /// 指定タスクが別タスクの子孫かどうかをチェック（データが循環していても停止する）
     private func isDescendant(_ taskId: String, of ancestorId: String) -> Bool {
         var current = taskId
+        var visited: Set<String> = []
         while let task = taskList.tasks.first(where: { $0.id == current }) {
             if task.parentId == ancestorId { return true }
-            if let parentId = task.parentId {
-                current = parentId
-            } else {
-                break
-            }
+            guard let parentId = task.parentId, visited.insert(current).inserted else { break }
+            current = parentId
         }
         return false
     }
@@ -195,14 +291,37 @@ public class TaskListViewModel: ObservableObject {
 
     /// サブタスクを独立タスクに（子孫も一緒にルート化）
     public func makeRootTask(taskId: String) {
-        guard let index = taskList.tasks.firstIndex(where: { $0.id == taskId }) else { return }
-        let oldLevel = taskList.tasks[index].indentLevel
-        taskList.tasks[index].parentId = nil
-        taskList.tasks[index].indentLevel = 0
+        guard let task = taskList.tasks.first(where: { $0.id == taskId }), !task.isRoot else { return }
 
-        // 子孫のインデントレベルを調整（差分を適用）
-        adjustDescendantLevels(for: taskId, levelDiff: -oldLevel)
+        // 元の親の直前に居座らせる（＝元居た場所にそのまま浮上させる）
+        let anchorId = task.parentId
+        reparent(taskId, to: nil)
+        relocateSubtree(taskId, above: anchorId)
 
+        invalidateManualOrder()
+        taskList.lastModified = Date()
+        save()
+    }
+
+    /// D&D 用: タスクを対象の直前へ移動し、同時に階層（親）も付け替える
+    /// - Parameters:
+    ///   - targetId: この タスクの直前に挿入する。nil なら未完了リストの末尾
+    ///   - newParentId: 付け替え先の親。nil ならルートタスクに引き上げる
+    public func moveTask(_ taskId: String, before targetId: String?, newParentId: String?) {
+        guard taskList.tasks.contains(where: { $0.id == taskId }) else { return }
+        // 移動先が自分自身・自分の子孫なら不正
+        if let newParentId {
+            guard newParentId != taskId,
+                  taskList.tasks.contains(where: { $0.id == newParentId }),
+                  !isDescendant(newParentId, of: taskId) else { return }
+        }
+        // 自分の子孫の前には入れない（サブツリーごと動くので位置が破綻する）
+        if let targetId, targetId == taskId || isDescendant(targetId, of: taskId) { return }
+
+        reparent(taskId, to: newParentId)
+        relocateSubtree(taskId, above: targetId)
+
+        invalidateManualOrder()
         taskList.lastModified = Date()
         save()
     }
@@ -219,20 +338,33 @@ public class TaskListViewModel: ObservableObject {
     }
 
     /// 階層順（親→子）で未完了タスクを取得
+    /// 親が完了済み/存在しない未完了タスクも表示の起点にするので、どのタスクも画面から消えない
     public func tasksInHierarchyOrder() -> [TodoTask] {
         var result: [TodoTask] = []
-        let incompleteRoots = taskList.tasks.filter { $0.isRoot && !$0.isCompleted }
+        var added: Set<String> = []
 
         func addWithChildren(_ task: TodoTask) {
+            guard added.insert(task.id).inserted else { return }
             result.append(task)
-            let children = taskList.tasks.filter { $0.parentId == task.id && !$0.isCompleted }
-            for child in children {
+            for child in taskList.tasks where child.parentId == task.id && !child.isCompleted {
                 addWithChildren(child)
             }
         }
 
-        for root in incompleteRoots {
-            addWithChildren(root)
+        // 表示の起点: 未完了で、かつ親が居ない / 完了済み / 存在しない（＝親の下に描画されない）タスク
+        for task in taskList.tasks where !task.isCompleted {
+            let hasVisibleParent = taskList.tasks
+                .first { $0.id == task.parentId }
+                .map { !$0.isCompleted } ?? false
+            if !hasVisibleParent {
+                addWithChildren(task)
+            }
+        }
+
+        // 循環参照などで取り残された未完了タスクの救済
+        for task in taskList.tasks where !task.isCompleted && !added.contains(task.id) {
+            added.insert(task.id)
+            result.append(task)
         }
 
         return result
@@ -241,18 +373,25 @@ public class TaskListViewModel: ObservableObject {
     /// 階層順（親→子）で全タスク（完了/未完了混合）を取得
     public func allTasksInHierarchyOrder() -> [TodoTask] {
         var result: [TodoTask] = []
-        let roots = taskList.tasks.filter { $0.isRoot }
+        var added: Set<String> = []
 
         func addWithChildren(_ task: TodoTask) {
+            guard added.insert(task.id).inserted else { return }
             result.append(task)
-            let children = taskList.tasks.filter { $0.parentId == task.id }
-            for child in children {
+            for child in taskList.tasks where child.parentId == task.id {
                 addWithChildren(child)
             }
         }
 
-        for root in roots {
-            addWithChildren(root)
+        // 親が存在しないタスク（宙ぶらりんの parentId を含む）を起点にする
+        for task in taskList.tasks where !taskList.tasks.contains(where: { $0.id == task.parentId }) {
+            addWithChildren(task)
+        }
+
+        // 循環参照などで取り残されたタスクの救済
+        for task in taskList.tasks where !added.contains(task.id) {
+            added.insert(task.id)
+            result.append(task)
         }
 
         return result
@@ -300,16 +439,15 @@ public class TaskListViewModel: ObservableObject {
     }
 
     /// タスクを別のタスクの前に挿入（割り込み用）
+    /// 対象と同じ階層に揃えるので、ルートの前に落とせばサブタスクは自動的にルートへ引き上がる
     public func insertTask(_ taskId: String, before targetId: String) {
-        guard let taskIndex = taskList.tasks.firstIndex(where: { $0.id == taskId }),
-              let targetIndex = taskList.tasks.firstIndex(where: { $0.id == targetId }) else { return }
+        guard let target = taskList.tasks.first(where: { $0.id == targetId }) else { return }
+        moveTask(taskId, before: targetId, newParentId: target.parentId)
+    }
 
-        let task = taskList.tasks.remove(at: taskIndex)
-        let newTargetIndex = taskIndex < targetIndex ? targetIndex - 1 : targetIndex
-        taskList.tasks.insert(task, at: newTargetIndex)
-
-        taskList.lastModified = Date()
-        save()
+    /// タスクを未完了リストの末尾へ移動し、ルートタスクに引き上げる（リスト下端へのドロップ用）
+    public func moveTaskToEndAsRoot(_ taskId: String) {
+        moveTask(taskId, before: nil, newParentId: nil)
     }
 
     /// タスクのルートを取得
@@ -350,21 +488,73 @@ public class TaskListViewModel: ObservableObject {
     }
 
     /// ソート（ルートタスクの優先度のみ、サブタスク構造は維持）
+    /// 最初のソート前に手動順序を控えておき、あとで復元できるようにする
     public func sort(ascending: Bool = false) {
+        if UserDefaults.standard.array(forKey: Self.manualOrderKey) == nil {
+            UserDefaults.standard.set(taskList.tasks.map { $0.id }, forKey: Self.manualOrderKey)
+        }
         taskList.sort(ascending: ascending)
         save()
+    }
+
+    /// ソート前の手動順序へ戻す（控えが無ければ何もしない）
+    /// - Returns: 実際に復元したら true
+    @discardableResult
+    public func restoreManualOrder() -> Bool {
+        guard let savedIds = UserDefaults.standard.array(forKey: Self.manualOrderKey) as? [String] else {
+            return false
+        }
+        UserDefaults.standard.removeObject(forKey: Self.manualOrderKey)
+
+        var remaining = taskList.tasks
+        var restored: [TodoTask] = []
+        for id in savedIds {
+            if let index = remaining.firstIndex(where: { $0.id == id }) {
+                restored.append(remaining.remove(at: index))
+            }
+        }
+        // 控えを取ったあとに追加されたタスクは末尾に残す
+        restored.append(contentsOf: remaining)
+
+        // 控えを取った後に完了したタスクがあるので、「完了は末尾」の不変条件を張り直す
+        restored = restored.filter { !$0.isCompleted } + restored.filter { $0.isCompleted }
+
+        taskList = TaskList(tasks: restored, lastModified: Date())
+        save()
+        return true
+    }
+
+    /// 手動で並びを変えたら、ソート前の控えは意味を失うので破棄する
+    private func invalidateManualOrder() {
+        UserDefaults.standard.removeObject(forKey: Self.manualOrderKey)
     }
 
     /// 全クリア
     public func clearAll() {
         taskList.tasks.removeAll()
+        invalidateManualOrder()
         taskList.lastModified = Date()
         save()
     }
 
-    /// 完了タスクのみクリア
+    /// 完了タスクのみクリア（生き残るサブタスクは親を失うのでルートに引き上げる）
     public func clearCompleted() {
-        taskList.tasks.removeAll { $0.isCompleted }
+        let removedIds = Set(taskList.tasks.filter { $0.isCompleted }.map { $0.id })
+        guard !removedIds.isEmpty else { return }
+
+        taskList.tasks.removeAll { removedIds.contains($0.id) }
+
+        // 消えた親を指したままだと、どのビューからも辿れない幽霊タスクになる
+        for index in taskList.tasks.indices {
+            if let parentId = taskList.tasks[index].parentId, removedIds.contains(parentId) {
+                let oldLevel = taskList.tasks[index].indentLevel
+                taskList.tasks[index].parentId = nil
+                taskList.tasks[index].indentLevel = 0
+                adjustDescendantLevels(for: taskList.tasks[index].id, levelDiff: -oldLevel)
+            }
+        }
+
+        invalidateManualOrder()
         taskList.lastModified = Date()
         save()
     }
@@ -386,12 +576,12 @@ public class TaskListViewModel: ObservableObject {
         // 設定を取得
         let allowListFormat = UserDefaults.standard.bool(forKey: "importAllowListFormat")
 
-        // インデント自動検知: タブがあればタブ単位、なければスペース数を検出
-        let detectedIndent = detectIndentUnit(in: text)
+        // インデント自動検知: スペース1レベルぶんの幅（タブは常に1レベル）
+        let spacesPerLevel = detectSpacesPerLevel(in: text)
 
         // パース結果を一時保存
         enum ParsedItem {
-            case task(title: String, priority: Priority, isCompleted: Bool, indentLevel: Int)
+            case task(title: String, priority: Priority, isCompleted: Bool, pomodoros: Int, indentLevel: Int)
             case note(text: String, indentLevel: Int)
         }
 
@@ -400,18 +590,16 @@ public class TaskListViewModel: ObservableObject {
         for line in lines {
             guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
 
-            let indentLevel = calculateIndentLevel(line: line, indentUnit: detectedIndent)
+            let indentLevel = calculateIndentLevel(line: line, spacesPerLevel: spacesPerLevel)
             var content = line.trimmingCharacters(in: .whitespaces)
 
-            // Markdown チェックボックス形式をタスクとしてパース
+            // Markdown チェックボックス形式をタスクとしてパース（`- ` と `* ` の両方を受け付ける）
             var isTask = false
             var isCompleted = false
-            if content.hasPrefix("- [x]") || content.hasPrefix("- [X]") {
-                content = String(content.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                isCompleted = true
-                isTask = true
-            } else if content.hasPrefix("- [ ]") {
-                content = String(content.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            // 末尾を `)` で閉じる: 正規表現リテラルは `*/` で終われない（ブロックコメント終端と衝突）
+            if let match = content.firstMatch(of: /^[-*]\s+\[([ xX])\](\s*)/) {
+                isCompleted = match.1 != " "
+                content = String(content[match.range.upperBound...]).trimmingCharacters(in: .whitespaces)
                 isTask = true
             } else if allowListFormat,
                       content.hasPrefix("- ") || content.hasPrefix("* ") {
@@ -438,6 +626,13 @@ public class TaskListViewModel: ObservableObject {
 
             guard isTask, !content.isEmpty else { continue }
 
+            // 実績ポモドーロ数をパース（エクスポートの " (3×)" 形式）— 優先度より先に外す
+            var pomodoros = 0
+            if let match = content.firstMatch(of: /\s*\((\d+)[×x]\)$/) {
+                pomodoros = Int(match.1) ?? 0
+                content = String(content[..<match.range.lowerBound])
+            }
+
             // 優先度をパース
             var priority: Priority = .medium
             if content.hasSuffix(" !!!") {
@@ -451,7 +646,13 @@ public class TaskListViewModel: ObservableObject {
                 content = String(content.dropLast(2))
             }
 
-            parsed.append(.task(title: content, priority: priority, isCompleted: isCompleted, indentLevel: indentLevel))
+            content = content.trimmingCharacters(in: .whitespaces)
+            guard !content.isEmpty else { continue }
+
+            parsed.append(.task(
+                title: content, priority: priority, isCompleted: isCompleted,
+                pomodoros: pomodoros, indentLevel: indentLevel
+            ))
         }
 
         guard !parsed.isEmpty else { return 0 }
@@ -465,7 +666,7 @@ public class TaskListViewModel: ObservableObject {
 
         for item in parsed {
             switch item {
-            case let .task(title, priority, isCompleted, indentLevel):
+            case let .task(title, priority, isCompleted, pomodoros, indentLevel):
                 while !parentStack.isEmpty && parentStack.last!.level >= indentLevel {
                     parentStack.removeLast()
                 }
@@ -476,6 +677,7 @@ public class TaskListViewModel: ObservableObject {
                     title: title,
                     priority: priority,
                     isCompleted: isCompleted,
+                    pomodoros: pomodoros,
                     parentId: parentId,
                     indentLevel: actualIndentLevel
                 )
@@ -498,10 +700,53 @@ public class TaskListViewModel: ObservableObject {
             }
         }
 
-        taskList.tasks.append(contentsOf: addedTasks)
+        // 未完了の子を持つ親は完了扱いにしない（完了親＋未完了子はどのビューでも辿れなくなる）
+        var hasIncompleteChild: Set<String> = []
+        for task in addedTasks where !task.isCompleted {
+            var cursor = task.parentId
+            while let parentId = cursor, hasIncompleteChild.insert(parentId).inserted {
+                cursor = addedTasks.first { $0.id == parentId }?.parentId
+            }
+        }
+        for i in addedTasks.indices where hasIncompleteChild.contains(addedTasks[i].id) {
+            addedTasks[i].isCompleted = false
+        }
+
+        // 表示順（親→子）でパースしたものを、保存フォーマットである実行順（子→親）に並べ替える
+        let ordered = inExecutionOrder(addedTasks)
+
+        // 完了/未完了それぞれ正しいブロックに入れて「完了は末尾」という不変条件を保つ
+        let incoming = ordered.filter { !$0.isCompleted }
+        let incomingCompleted = ordered.filter { $0.isCompleted }
+        taskList.tasks.insert(contentsOf: incoming, at: endOfIncompleteIndex())
+        taskList.tasks.append(contentsOf: incomingCompleted)
+
+        // 手動順序の控えは破棄しない。追加分は控えに載っていないだけで、
+        // restoreManualOrder() が末尾に回してくれる（ここで捨てると復元できなくなる）
+        taskList.lastModified = Date()
         save()
 
         return addedTasks.count
+    }
+
+    /// 親→子の並びを、保存フォーマットである実行順（子孫 → 本人）へ変換する
+    private func inExecutionOrder(_ tasks: [TodoTask]) -> [TodoTask] {
+        var result: [TodoTask] = []
+
+        func append(_ task: TodoTask) {
+            for child in tasks where child.parentId == task.id {
+                append(child)
+            }
+            result.append(task)
+        }
+
+        for task in tasks where task.parentId == nil {
+            append(task)
+        }
+        // 親がこのバッチに居ないタスクの取りこぼしを防ぐ
+        let addedIds = Set(result.map { $0.id })
+        result.append(contentsOf: tasks.filter { !addedIds.contains($0.id) })
+        return result
     }
 
     /// クリップボードにエクスポート（階層構造対応）
@@ -521,7 +766,8 @@ public class TaskListViewModel: ObservableObject {
         for task in hierarchyOrder {
             let indent = String(repeating: indentUnit, count: task.indentLevel)
             let checkbox = task.isCompleted ? "[x]" : "[ ]"
-            let priority = task.isRoot ? " \(task.priority.symbol)" : ""
+            // 優先度はサブタスクにも書き出す（書かないと再インポートで medium に潰れる）
+            let priority = " \(task.priority.symbol)"
             let pomodoros = task.pomodoros > 0 ? " (\(task.pomodoros)×)" : ""
             lines.append("\(indent)- \(checkbox) \(task.title)\(priority)\(pomodoros)")
 
@@ -541,68 +787,38 @@ public class TaskListViewModel: ObservableObject {
 
     /// 実行順を階層順（親→サブタスク）に変換
     private func convertToHierarchyOrder() -> [TodoTask] {
-        var result: [TodoTask] = []
-        let roots = taskList.tasks.filter { $0.isRoot }
-
-        func addWithChildren(_ task: TodoTask) {
-            result.append(task)
-            let children = taskList.tasks.filter { $0.parentId == task.id }
-            for child in children {
-                addWithChildren(child)
-            }
-        }
-
-        for root in roots {
-            addWithChildren(root)
-        }
-
-        // 孤立したサブタスク
-        let addedIds = Set(result.map { $0.id })
-        let orphans = taskList.tasks.filter { !addedIds.contains($0.id) }
-        result.append(contentsOf: orphans)
-
-        return result
+        allTasksInHierarchyOrder()
     }
 
     // MARK: - Indent Detection
 
-    /// インデント単位を自動検知（タブ or スペース数）
-    private func detectIndentUnit(in text: String) -> IndentUnit {
-        let lines = text.components(separatedBy: .newlines)
-
-        // タブがあるかチェック
-        for line in lines {
-            if line.hasPrefix("\t") {
-                return .tab
-            }
-        }
-
-        // スペースの最小単位を検出
+    /// スペース1レベルぶんの幅を自動検知する
+    /// タブは常に1レベルとして扱うので、タブとスペースが混在していても階層は潰れない
+    private func detectSpacesPerLevel(in text: String) -> Int {
         var minSpaces = Int.max
-        for line in lines {
-            let spaces = line.prefix(while: { $0 == " " }).count
-            if spaces > 0 && spaces < minSpaces {
-                minSpaces = spaces
+        for line in text.components(separatedBy: .newlines) {
+            let spaces = line.drop(while: { $0 == "\t" }).prefix(while: { $0 == " " }).count
+            if spaces > 0 {
+                minSpaces = min(minSpaces, spaces)
             }
         }
-
-        return .spaces(minSpaces == Int.max ? 2 : minSpaces)
+        return minSpaces == Int.max ? 2 : minSpaces
     }
 
-    private enum IndentUnit {
-        case tab
-        case spaces(Int)
-    }
-
-    /// 行のインデントレベルを計算
-    private func calculateIndentLevel(line: String, indentUnit: IndentUnit) -> Int {
-        switch indentUnit {
-        case .tab:
-            return line.prefix(while: { $0 == "\t" }).count
-        case .spaces(let count):
-            let spaces = line.prefix(while: { $0 == " " }).count
-            return count > 0 ? spaces / count : 0
+    /// 行のインデントレベルを計算（タブ = 1レベル、スペース = 検出した単位ごとに1レベル）
+    private func calculateIndentLevel(line: String, spacesPerLevel: Int) -> Int {
+        var tabs = 0
+        var spaces = 0
+        for character in line {
+            if character == "\t" {
+                tabs += 1
+            } else if character == " " {
+                spaces += 1
+            } else {
+                break
+            }
         }
+        return tabs + spaces / max(spacesPerLevel, 1)
     }
 
     // MARK: - Persistence
@@ -613,7 +829,11 @@ public class TaskListViewModel: ObservableObject {
             let data = try Data(contentsOf: storageURL)
             taskList = try JSONDecoder().decode(TaskList.self, from: data)
         } catch {
-            // 新しいフォーマットで読めない場合は空リストで開始
+            // 読めない場合は空リストで開始するが、元データは退避して救出可能にしておく
+            let backupURL = storageURL.deletingLastPathComponent()
+                .appendingPathComponent("tasks.corrupt.json")
+            try? FileManager.default.removeItem(at: backupURL)
+            try? FileManager.default.copyItem(at: storageURL, to: backupURL)
             taskList = TaskList()
         }
     }
@@ -626,13 +846,19 @@ public class TaskListViewModel: ObservableObject {
     private func save() {
         do {
             let data = try JSONEncoder().encode(taskList)
-            try data.write(to: storageURL)
+            // .atomic: 書き込み途中で落ちても tasks.json が切り詰められない
+            try data.write(to: storageURL, options: .atomic)
         } catch {
             // エラーは無視
         }
     }
 
     // MARK: - Hierarchy Helpers
+
+    /// 指定タスクの全サブタスク数（完了/未完了問わず、孫以下も含む）
+    public func subtaskCount(for taskId: String) -> Int {
+        getSubtaskIds(for: taskId).count
+    }
 
     /// 指定タスクの直接の子・孫含む未完了サブタスク数
     public func incompleteSubtaskCount(for taskId: String) -> Int {
@@ -685,8 +911,16 @@ public class TaskListViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         let task = TodoTask(title: trimmed, priority: .low)
         // 未完了タスクの末尾、完了タスクの直前に挿入
-        let insertIndex = taskList.tasks.firstIndex(where: { $0.isCompleted }) ?? taskList.tasks.count
-        taskList.tasks.insert(task, at: insertIndex)
+        taskList.tasks.insert(task, at: endOfIncompleteIndex())
+        taskList.lastModified = Date()
+        save()
+    }
+
+    /// タスクの優先度を変更して保存する（View から直接 tasks を書き換えると保存されない）
+    public func setPriority(_ priority: Priority, forTaskId taskId: String) {
+        guard let index = taskList.tasks.firstIndex(where: { $0.id == taskId }),
+              taskList.tasks[index].priority != priority else { return }
+        taskList.tasks[index].priority = priority
         taskList.lastModified = Date()
         save()
     }

@@ -8,10 +8,12 @@ public struct TomadoApp: App {
     public init() {}
 
     public var body: some Scene {
-        // Settings scene として最小限。実際のメインウィンドウは AppDelegate で AppKit 直接生成して
+        // 実際のメインウィンドウは AppDelegate で AppKit 直接生成して
         // SwiftUI WindowGroup の不確実な lifecycle 管理から逃れる。
+        // Settings scene はアプリメニューに ⌘, を生やすので、中身も本物の設定にしておく
+        // （空にすると ⌘, が白紙のウィンドウを開いてしまう）
         Settings {
-            EmptyView()
+            SettingsView(timer: appDelegate.pomodoroTimer)
         }
     }
 }
@@ -36,6 +38,8 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyPresetDurationsOnFirstLaunch()
+
         // 初回タスク選択
         if let nextTask = taskListViewModel.taskList.nextTask {
             pomodoroTimer.setCurrentTask(nextTask)
@@ -43,6 +47,28 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
         // 起動時は必ず標準モード開始（前回ミニマルだったら復元はせず、安全側に倒す）
         isMinimalMode = false
         showMainWindow()
+    }
+
+    /// 初回起動時、タイマーの時間をフッターに出ているプリセット（既定は 🐇 Short Focus）に合わせる。
+    /// 揃えないと 🐇 表示なのに 25:00 という食い違いが出る
+    private func applyPresetDurationsOnFirstLaunch() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "pomodoro_work_duration") == nil else { return }
+
+        let preset = defaults.string(forKey: "timerPreset") ?? "shortFocus"
+        func minutes(_ key: String, _ fallback: Int) -> Int {
+            defaults.object(forKey: key) as? Int ?? fallback
+        }
+        let (work, breakMin, longBreak) = preset == "deepFocus"
+            ? (minutes("deepFocusWork", 35), minutes("deepFocusBreak", 10), minutes("deepFocusLongBreak", 30))
+            : (minutes("shortFocusWork", 12), minutes("shortFocusBreak", 3), minutes("shortFocusLongBreak", 15))
+
+        pomodoroTimer.updateSettings(
+            workMinutes: work,
+            breakMinutes: breakMin,
+            longBreakMinutes: longBreak,
+            pomodorosUntilLongBreak: pomodoroTimer.pomodorosUntilLongBreak
+        )
     }
 
     /// ミニマルモードを切替
@@ -134,8 +160,9 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
 
         // autosave で復元
         win.setFrameAutosaveName("TomadoMain.v2")
-        // 復元結果が異常（旧版の遺物など）なら初期 frame に戻す
-        if win.frame.width > 700 || win.frame.width < minSize.width || win.frame.height < minSize.height {
+        // 最小サイズを下回る復元結果（旧版の遺物など）だけ初期 frame に戻す。
+        // 上限は設けない — ユーザーが広げたウィンドウを毎回畳んでしまうため
+        if win.frame.width < minSize.width || win.frame.height < minSize.height {
             win.setFrame(initialFrame, display: false)
         }
 

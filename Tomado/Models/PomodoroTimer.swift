@@ -455,6 +455,14 @@ public class PomodoroTimer: ObservableObject {
         currentPhase = .work
         sessionPomodoros = 0
 
+        // フェーズのタイムスタンプも必ずクリアする。
+        // 残したままだと handleTick が「経過 > 新しいフェーズ長」と判定して即完了してしまう
+        phaseStartTime = nil
+        totalPausedDuration = 0
+        pausedAt = nil
+        taskStartTime = nil
+        taskPausedDuration = 0
+
         isInitializing = false
 
         // 設定を保存
@@ -485,14 +493,16 @@ public class PomodoroTimer: ObservableObject {
 
         isRunning = true
 
+        // 再開元の時刻を先に控える（下でクリアするとタスク側の計算に使えなくなるため）
+        let resumedFrom = pausedAt
+
         // フェーズ開始時刻を設定（初回のみ）
         if phaseStartTime == nil {
             phaseStartTime = Date()
             totalPausedDuration = 0
-        } else if let pausedTime = pausedAt {
+        } else if let pausedTime = resumedFrom {
             // 一時停止から再開する場合、一時停止時間を累積
             totalPausedDuration += Date().timeIntervalSince(pausedTime)
-            pausedAt = nil
         }
 
         // 作業フェーズでタスクがある場合、タスク開始時刻を設定
@@ -500,11 +510,13 @@ public class PomodoroTimer: ObservableObject {
             if taskStartTime == nil {
                 taskStartTime = Date()
                 taskPausedDuration = 0
-            } else if let pausedTime = pausedAt {
+            } else if let pausedTime = resumedFrom {
                 // タスクの一時停止から再開
                 taskPausedDuration += Date().timeIntervalSince(pausedTime)
             }
         }
+
+        pausedAt = nil
 
         timer?.invalidate()  // 既存のタイマーがあれば停止
 
@@ -555,9 +567,22 @@ public class PomodoroTimer: ObservableObject {
     }
 
     public func skip() {
+        // 停止中にスキップしても勝手に走り出さないよう、元の状態を保つ
+        let wasRunning = isRunning
         pause()
         handlePhaseCompletion(skip: true)
-        start()
+        if wasRunning {
+            start()
+        } else {
+            // 停止したままなら、handlePhaseCompletion が打った開始時刻を捨てる。
+            // 残すと止まっている間の実時間が新フェーズの経過として計上されてしまう
+            phaseStartTime = nil
+            totalPausedDuration = 0
+            pausedAt = nil
+            taskStartTime = nil
+            taskPausedDuration = 0
+            saveTimerState()
+        }
     }
 
     public func reset() {
@@ -598,10 +623,10 @@ public class PomodoroTimer: ObservableObject {
             guard seconds > 0 else { continue }
 
             // タスクIDから経過ポモドーロを計算
-            let elapsedSeconds = Double(seconds)
-            let hundredthPomodoroSeconds = Double(workDuration) / 100.0
-            let completedHundredths = floor(elapsedSeconds / hundredthPomodoroSeconds)
-            let elapsedPomodoros = completedHundredths * 0.01
+            // 1/100 単位に丸めない: 記録が複数回に分かれると切り捨て誤差が積もり、
+            // 1フェーズ働いても実績が 1.00 に届かなくなる
+            guard workDuration > 0 else { continue }
+            let elapsedPomodoros = Double(seconds) / Double(workDuration)
 
             guard elapsedPomodoros > 0 else { continue }
 
@@ -619,6 +644,11 @@ public class PomodoroTimer: ObservableObject {
 
         // 全てのタスクの累積をリセット
         accumulatedWorkSecondsByTask.removeAll()
+
+        // 記録済みの時間を次回また送ってしまわないよう、タスク時刻の基準を採り直す
+        // （累積値は taskStartTime からの絶対値なので、ここを戻さないと二重計上になる）
+        taskStartTime = isRunning ? Date() : nil
+        taskPausedDuration = 0
 
         // 注: 雑務・介入時間の記録はendInterruptionMode()でのみ行う
         // 一時停止時は累積を止めるだけで記録は作成しない
@@ -660,17 +690,9 @@ public class PomodoroTimer: ObservableObject {
         let elapsedTime = Date().timeIntervalSince(startTime) - totalPausedDuration
         let newRemainingSeconds = max(0, phaseDuration - Int(elapsedTime))
 
-        // フェーズ完了チェック
-        if newRemainingSeconds <= 0 {
-            remainingSeconds = 0
-            handlePhaseCompletion()
-            return
-        }
-
-        // 残り時間を更新（UIのため）
-        remainingSeconds = newRemainingSeconds
-
         // 累積時間の計算（1秒ごと）
+        // フェーズ完了チェックより前に行うこと。後ろに置くと完了時の tick が early return して
+        // 最後の1秒分が記録されず、1フェーズ働いても実績が1ポモドーロに届かなくなる
         if isInterruptionMode {
             // 雑務・介入モード: interruptionStartTimeからの経過時間を累積
             if let interruptionStart = interruptionStartTime {
@@ -689,6 +711,16 @@ public class PomodoroTimer: ObservableObject {
             }
         }
 
+        // フェーズ完了チェック
+        if newRemainingSeconds <= 0 {
+            remainingSeconds = 0
+            handlePhaseCompletion()
+            return
+        }
+
+        // 残り時間を更新（UIのため）
+        remainingSeconds = newRemainingSeconds
+
         // 30秒ごとに状態を保存（パフォーマンス配慮）
         if remainingSeconds % 30 == 0 {
             saveTimerState()
@@ -696,16 +728,19 @@ public class PomodoroTimer: ObservableObject {
     }
 
     private func handlePhaseCompletion(skip: Bool = false) {
-        // Play completion sound
-        if soundEnabled {
+        // Play completion sound（スキップは「完了」ではないので鳴らさない）
+        if soundEnabled && !skip {
             playCompletionSound()
         }
 
         switch currentPhase {
         case .work:
-            sessionPomodoros += 1
+            // スキップした作業フェーズは1ポモドーロとして数えない
+            if !skip {
+                sessionPomodoros += 1
+            }
 
-            // 全ての累積がある未記録タスクを記録
+            // 全ての累積がある未記録タスクを記録（実際に働いた分だけが入っている）
             recordAllAccumulatedProgress()
 
             if sessionPomodoros >= pomodorosUntilLongBreak {

@@ -22,7 +22,7 @@ A minimalist Pomodoro timer with task management for macOS.
 - **Pomodoro Timer**: Work sessions, short breaks, and long breaks with customizable durations
 - **Task Management**: Simple task list with priority levels (!, !!, !!!)
 - **Task Notes**: Attach context to a task via indented bullets (`-` lines under a task)
-- **Subtasks**: Organize tasks hierarchically with drag & drop
+- **Subtasks**: Organize tasks hierarchically with drag & drop — drop onto a row to nest it, drop onto the line between rows (or below the list) to pull it back out
 - **Auto-cascade**: Confirmation modal when completing a parent with incomplete subtasks; auto-completes parent when all subtasks done; auto-advances to next task on completion
 - **View Modes**: Toggle between separated view and hierarchy view
 - **Minimal Mode**: Compact floating window showing only the timer — small, draggable, optionally always-on-top
@@ -53,8 +53,8 @@ A minimalist Pomodoro timer with task management for macOS.
 | ⌘⇧I | Quick Capture (capture without breaking focus) |
 | ⌘⌫ | Delete completed tasks |
 | ⌘⇧⌫ | Delete all tasks |
-| ⌘V | Import from clipboard |
-| ⌘C | Export to clipboard |
+| ⌘⌥V | Import from clipboard |
+| ⌘⌥C | Export to clipboard |
 | Enter | Add task (!!) |
 | ⇧Enter | Add task (!) |
 | ⌘Enter | Add task (!!!) |
@@ -114,13 +114,13 @@ Note: enabling "Allow list format" makes indented `-` bullets become subtasks ra
 
 ```markdown
 - [ ] Task !!
-  - [ ] Subtask
+  - [ ] Subtask !!
 - [x] Completed task !!!
-- [ ] Task with notes
+- [ ] Task with notes !!
   - Contextual note
 ```
 
-Note: Subtasks inherit priority from their parent (no `!` marks). Notes are exported as indented bullets under their task.
+Note: Priority marks are written for every task (including subtasks) so an export → import round trip is lossless. Notes are exported as indented bullets under their task.
 
 Indent style (spaces/tab) is configurable in settings.
 
@@ -168,7 +168,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 - **ポモドーロタイマー**: 作業・短い休憩・長い休憩のカスタマイズ可能なタイマー
 - **タスク管理**: 優先度付き（!, !!, !!!）のシンプルなタスクリスト
 - **タスクメモ**: タスク配下のインデント `-` 行を文脈メモとして保持
-- **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理
+- **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理。行の上に落とすとサブタスク化、行間のラインやリスト下端に落とすとその階層に引き上げ
 - **自動カスケード**: 親タスク完了時に未完了サブタスクがあれば確認モーダル。全サブタスク完了時は親も自動完了。完了後は次の未完了タスクへ自動遷移
 - **ビューモード**: 分離ビューと階層ビューを切り替え
 - **ミニマルモード**: タイマーだけの小さな浮遊ウィンドウ。ドラッグ移動可、最前面固定オプション
@@ -199,8 +199,8 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 | ⌘⇧I | クイックキャプチャ (集中を切らずに記録) |
 | ⌘⌫ | 完了タスクを削除 |
 | ⌘⇧⌫ | すべてのタスクを削除 |
-| ⌘V | クリップボードからインポート |
-| ⌘C | クリップボードにエクスポート |
+| ⌘⌥V | クリップボードからインポート |
+| ⌘⌥C | クリップボードにエクスポート |
 | Enter | タスク追加 (!!) |
 | ⇧Enter | タスク追加 (!) |
 | ⌘Enter | タスク追加 (!!!) |
@@ -262,13 +262,13 @@ Markdownチェックボックス形式を使用。優先度は末尾の `!` で�
 
 ```markdown
 - [ ] タスク !!
-  - [ ] サブタスク
+  - [ ] サブタスク !!
 - [x] 完了タスク !!!
-- [ ] メモ付きタスク
+- [ ] メモ付きタスク !!
   - 文脈メモ
 ```
 
-※サブタスクは親の優先度を継承（`!` マークなし）。メモはタスク配下のインデント `-` 行として出力されます。
+※優先度マークはサブタスクにも出力されます（エクスポート→インポートで情報が落ちないようにするため）。メモはタスク配下のインデント `-` 行として出力されます。
 
 インデントスタイル（スペース/タブ）は設定で変更可能。
 

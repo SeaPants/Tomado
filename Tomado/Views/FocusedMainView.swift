@@ -17,6 +17,9 @@ struct FocusedMainView: View {
     @State private var pendingCompleteTaskId: String?  // サブタスク確認待ちの親タスクID
     @State private var pendingCompleteSubtaskCount: Int = 0
     @State private var showCompleteWithSubtasksConfirm: Bool = false
+    @State private var pendingDeleteTaskId: String?  // サブタスクごと削除する確認待ちのタスクID
+    @State private var pendingDeleteSubtaskCount: Int = 0
+    @State private var showDeleteWithSubtasksConfirm: Bool = false
     @AppStorage("sortState") private var sortState: SortState = .unsorted  // ソート状態
     @AppStorage("isTopmost") private var isTopmost: Bool = false  // 最前面固定
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
@@ -80,6 +83,13 @@ struct FocusedMainView: View {
             applyWindowLevel()
             updateBreakLock()
         }
+        .onChange(of: showSettings) { _, _ in
+            // シートを閉じたら保留していたロックを適用する
+            updateBreakLock()
+        }
+        .onChange(of: showQuickCapture) { _, _ in
+            updateBreakLock()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(timer: timer)
         }
@@ -136,6 +146,24 @@ struct FocusedMainView: View {
             .keyboardShortcut(.defaultAction)
         } message: {
             Text(String(localized: "alert.completeWithSubtasks.message \(pendingCompleteSubtaskCount)"))
+        }
+        .alert(
+            String(localized: "alert.deleteWithSubtasks.title"),
+            isPresented: $showDeleteWithSubtasksConfirm
+        ) {
+            Button(String(localized: "button.cancel"), role: .cancel) {
+                pendingDeleteTaskId = nil
+                pendingDeleteSubtaskCount = 0
+            }
+            Button(String(localized: "button.delete"), role: .destructive) {
+                if let id = pendingDeleteTaskId {
+                    taskListVM.deleteTask(id: id)
+                }
+                pendingDeleteTaskId = nil
+                pendingDeleteSubtaskCount = 0
+            }
+        } message: {
+            Text(String(localized: "alert.deleteWithSubtasks.message \(pendingDeleteSubtaskCount)"))
         }
         .overlay(alignment: .top) {
             if let message = toastMessage {
@@ -214,13 +242,15 @@ struct FocusedMainView: View {
     /// 休憩フェーズに合わせてフルスクリーンロックウィンドウを表示/非表示
     private func updateBreakLock() {
         let inBreak = timer.currentPhase != .work
-        if strictBreakMode && inBreak {
-            breakLockController.show(timer: timer, onSkip: {
-                showToast(String(localized: "toast.skipped"))
-            })
-        } else {
+        guard strictBreakMode && inBreak else {
             breakLockController.hide()
+            return
         }
+        // シート表示中にロックを被せるとシートごと閉じ込めてしまうので、閉じるまで待つ
+        guard !showSettings && !showQuickCapture else { return }
+        breakLockController.show(timer: timer, onSkip: {
+            showToast(String(localized: "toast.skipped"))
+        })
     }
 
     // MARK: - Input Section
@@ -455,8 +485,8 @@ struct FocusedMainView: View {
             sortState = .ascending
             showToast(String(localized: "toast.sortAscending"))
         case .ascending:
-            // unsortedに戻る（保存された順序をリロード）
-            taskListVM.reload()
+            // unsortedに戻る（ソート前に控えた手動順序を復元する）
+            taskListVM.restoreManualOrder()
             sortState = .unsorted
             showToast(String(localized: "toast.sortUnsorted"))
         }
@@ -600,10 +630,10 @@ struct FocusedMainView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Spacer()
             Image(systemName: "checkmark.circle")
-                .font(.system(size: 48))
+                .font(.system(size: 36))
                 .foregroundColor(.green.opacity(0.5))
             Text(String(localized: "empty.title"))
                 .font(.headline)
@@ -612,10 +642,52 @@ struct FocusedMainView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+
+            // タスクが無くてもタイマーは操作できる（休憩を最後まで走らせられる）
+            timerDisplay
+            taskFreeControlButtons
+
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 16)
+    }
+
+    /// タスクが無いときのタイマー操作（再生・スキップ・リセットのみ）
+    private var taskFreeControlButtons: some View {
+        HStack(spacing: 16) {
+            controlButton(
+                id: "play",
+                icon: timer.isRunning ? "pause.circle.fill" : "play.circle.fill",
+                color: phaseColor,
+                size: 36,
+                action: toggleTimer
+            )
+            .keyboardShortcut("p", modifiers: .command)
+
+            controlButton(
+                id: "skip",
+                icon: "forward.circle",
+                color: .secondary,
+                action: {
+                    timer.skip()
+                    showToast(String(localized: "toast.skipped"))
+                }
+            )
+            .keyboardShortcut("s", modifiers: .command)
+
+            controlButton(
+                id: "reset",
+                icon: "arrow.counterclockwise.circle",
+                color: .secondary,
+                action: {
+                    timer.resetCycle()
+                    showToast(String(localized: "toast.reset"))
+                }
+            )
+            .keyboardShortcut("r", modifiers: .command)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Task List Section
@@ -635,10 +707,11 @@ struct FocusedMainView: View {
     private var separatedTaskListView: some View {
         Group {
             let hierarchyTasks = taskListVM.tasksInHierarchyOrder()
+            let completedTasks = taskListVM.taskList.tasks.filter { $0.isCompleted }
             let currentTaskId = taskListVM.currentTask?.id
             let ancestorIds = currentTaskId.map { taskListVM.getAncestorIds(for: $0) } ?? []
 
-            if !hierarchyTasks.isEmpty {
+            if !hierarchyTasks.isEmpty || !completedTasks.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         // 階層順でタスクを表示（親→子）
@@ -648,7 +721,7 @@ struct FocusedMainView: View {
 
                             VStack(spacing: 0) {
                                 // 挿入ライン（ドロップターゲット）
-                                insertLine(beforeTaskId: task.id)
+                                insertLine(before: task)
 
                                 // タスク行
                                 taskRow(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex)
@@ -658,8 +731,12 @@ struct FocusedMainView: View {
                             }
                         }
 
+                        // 末尾ドロップゾーン（下端に落とすとルート化して最後尾へ）
+                        if !hierarchyTasks.isEmpty {
+                            trailingDropZone()
+                        }
+
                         // 完了タスク
-                        let completedTasks = taskListVM.taskList.tasks.filter { $0.isCompleted }
                         if !completedTasks.isEmpty {
                             Divider().padding(.vertical, 8)
                             ForEach(completedTasks, id: \.id) { task in
@@ -672,10 +749,8 @@ struct FocusedMainView: View {
                     }
                     .padding(.vertical, 4)
                 }
-            } else if taskListVM.taskList.tasks.isEmpty {
-                Color.clear.frame(height: 100)
             } else {
-                Color.clear.frame(height: 50)
+                Color.clear.frame(height: 100)
             }
         }
     }
@@ -696,7 +771,7 @@ struct FocusedMainView: View {
 
                             VStack(spacing: 0) {
                                 if !task.isCompleted {
-                                    insertLine(beforeTaskId: task.id)
+                                    insertLine(before: task)
                                 }
 
                                 if task.isCompleted {
@@ -713,6 +788,11 @@ struct FocusedMainView: View {
                                         .background(taskRowBackground(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex))
                                 }
                             }
+                        }
+
+                        // 末尾ドロップゾーン（下端に落とすとルート化して最後尾へ）
+                        if allTasksInHierarchy.contains(where: { !$0.isCompleted }) {
+                            trailingDropZone()
                         }
                     }
                     .padding(.vertical, 4)
@@ -756,27 +836,49 @@ struct FocusedMainView: View {
                 taskListVM.uncompleteTask(id: task.id)
             }
             Button(String(localized: "button.delete"), role: .destructive) {
-                taskListVM.deleteTask(id: task.id)
+                requestDelete(taskId: task.id)
             }
         }
     }
 
     /// 挿入ライン（D&Dで割り込み挿入用）
-    private func insertLine(beforeTaskId: String) -> some View {
-        Rectangle()
-            .fill(insertBeforeId == beforeTaskId ? Color.accentColor : Color.clear)
-            .frame(height: insertBeforeId == beforeTaskId ? 3 : 1)
+    /// ドロップしたタスクは対象と同じ階層に揃うので、ルートの前に落とせばサブタスクは
+    /// そのままルートへ引き上がる（＝D&Dだけで階層を上げ下げできる）
+    private func insertLine(before task: TodoTask) -> some View {
+        let isTargeted = insertBeforeId == task.id
+        return Rectangle()
+            .fill(isTargeted ? Color.accentColor : Color.clear)
+            .frame(height: isTargeted ? 3 : 1)
             .contentShape(Rectangle().size(width: .infinity, height: 12))  // タッチ領域は広めに
             .dropDestination(for: String.self) { droppedIds, _ in
-                guard let droppedId = droppedIds.first,
-                      droppedId != beforeTaskId else { return false }
-                taskListVM.insertTask(droppedId, before: beforeTaskId)
+                guard let droppedId = droppedIds.first, droppedId != task.id else { return false }
+                taskListVM.moveTask(droppedId, before: task.id, newParentId: task.parentId)
                 sortState = .unsorted
                 return true
-            } isTargeted: { isTargeted in
-                insertBeforeId = isTargeted ? beforeTaskId : nil
+            } isTargeted: { targeted in
+                insertBeforeId = targeted ? task.id : nil
             }
     }
+
+    /// リスト末尾のドロップゾーン（下端に落とす = ルート化して末尾へ）
+    private func trailingDropZone() -> some View {
+        let isTargeted = insertBeforeId == Self.trailingDropId
+        return Rectangle()
+            .fill(isTargeted ? Color.accentColor : Color.clear)
+            .frame(height: isTargeted ? 3 : 1)
+            .contentShape(Rectangle().size(width: .infinity, height: 28))
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let droppedId = droppedIds.first else { return false }
+                taskListVM.moveTaskToEndAsRoot(droppedId)
+                sortState = .unsorted
+                return true
+            } isTargeted: { targeted in
+                insertBeforeId = targeted ? Self.trailingDropId : nil
+            }
+    }
+
+    /// 末尾ドロップゾーンのハイライト用センチネル（実タスクIDと衝突しない）
+    private static let trailingDropId = "__tomado.trailingDropZone__"
 
     /// タスク行の背景色を決定
     private func taskRowBackground(_ task: TodoTask, isCurrent: Bool, ancestorIndex: Int?) -> Color {
@@ -839,7 +941,10 @@ struct FocusedMainView: View {
 
                 // サブタスク解除ボタン
                 if !task.isRoot {
-                    Button(action: { taskListVM.makeRootTask(taskId: task.id) }) {
+                    Button(action: {
+                        taskListVM.makeRootTask(taskId: task.id)
+                        sortState = .unsorted
+                    }) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
@@ -896,7 +1001,7 @@ struct FocusedMainView: View {
                 }
                 Divider()
             }
-            Button(String(localized: "button.delete"), role: .destructive) { taskListVM.deleteTask(id: task.id) }
+            Button(String(localized: "button.delete"), role: .destructive) { requestDelete(taskId: task.id) }
         }
     }
 
@@ -916,9 +1021,7 @@ struct FocusedMainView: View {
 
     /// 優先度を設定（表示順は変えない）
     private func setPriority(_ task: TodoTask, _ priority: Priority) {
-        if let index = taskListVM.taskList.tasks.firstIndex(where: { $0.id == task.id }) {
-            taskListVM.taskList.tasks[index].priority = priority
-        }
+        taskListVM.setPriority(priority, forTaskId: task.id)
     }
 
     private func completedTaskRow(_ task: TodoTask) -> some View {
@@ -985,7 +1088,7 @@ struct FocusedMainView: View {
                 taskListVM.uncompleteTask(id: task.id)
             }
             Button(String(localized: "button.delete"), role: .destructive) {
-                taskListVM.deleteTask(id: task.id)
+                requestDelete(taskId: task.id)
             }
         }
     }
@@ -1107,13 +1210,14 @@ struct FocusedMainView: View {
                     showToast(String(localized: "toast.imported \(count)"))
                 }
             }
-            .keyboardShortcut("v", modifiers: .command)
+            // ⌘V / ⌘C は OS の貼り付け・コピーに譲る（入力欄にペーストできなくなるため）
+            .keyboardShortcut("v", modifiers: [.command, .option])
             Button("") {
                 taskListVM.exportToClipboard()
                 showToast(String(localized: "toast.exported"))
             }
             .disabled(taskListVM.taskList.tasks.isEmpty)
-            .keyboardShortcut("c", modifiers: .command)
+            .keyboardShortcut("c", modifiers: [.command, .option])
             Button("") { showClearCompletedConfirm = true }
                 .disabled(taskListVM.taskList.tasks.filter { $0.isCompleted }.isEmpty)
                 .keyboardShortcut(.delete, modifiers: .command)
@@ -1133,6 +1237,18 @@ struct FocusedMainView: View {
             timer.pause()
         } else {
             timer.start()
+        }
+    }
+
+    /// 削除を要求する。サブタスクを巻き添えにする場合だけ確認を挟む
+    private func requestDelete(taskId: String) {
+        let subtaskCount = taskListVM.subtaskCount(for: taskId)
+        if subtaskCount > 0 {
+            pendingDeleteTaskId = taskId
+            pendingDeleteSubtaskCount = subtaskCount
+            showDeleteWithSubtasksConfirm = true
+        } else {
+            taskListVM.deleteTask(id: taskId)
         }
     }
 
@@ -1181,8 +1297,8 @@ struct FocusedMainView: View {
             timer.setCurrentTask(task)
         } else {
             timer.setCurrentTask(nil)
-            // タスクがなくなったらタイマー停止（ポモドーロは継続）
-            if timer.isRunning {
+            // 作業フェーズだけ停止する。休憩にタスクは要らないので走らせたままにする
+            if timer.isRunning && timer.currentPhase == .work {
                 timer.pause()
             }
         }
@@ -1237,24 +1353,28 @@ struct SettingsView: View {
     @State private var separateStartEndSounds: Bool
     @State private var soundVolume: Double
 
-    // インポート/エクスポート設定
-    @AppStorage("importAllowListFormat") private var importAllowListFormat: Bool = false
-    @AppStorage("indentStyle") private var indentStyle: String = "spaces"
-    @AppStorage("indentSpaces") private var indentSpaces: Int = 2
+    // 以下は「保存」を押すまで確定しない下書き（キャンセルで捨てられる）
+    @State private var importAllowListFormat: Bool
+    @State private var indentStyle: String
+    @State private var indentSpaces: Int
+    @State private var appLanguage: String
+    @State private var shortFocusWork: Int
+    @State private var shortFocusBreak: Int
+    @State private var shortFocusLongBreak: Int
+    @State private var deepFocusWork: Int
+    @State private var deepFocusBreak: Int
+    @State private var deepFocusLongBreak: Int
+    @State private var strictBreakMode: Bool
 
-    // 言語設定
-    @AppStorage("appLanguage") private var appLanguage: String = "system"
+    /// 現在選択中のプリセット（保存時に、編集されたプリセットの時間をタイマーへ反映するのに使う）
+    @AppStorage("timerPreset") private var timerPreset: FocusedMainView.TimerPreset = .shortFocus
 
-    // タイマープリセット設定
-    @AppStorage("shortFocusWork") private var shortFocusWork: Int = 12
-    @AppStorage("shortFocusBreak") private var shortFocusBreak: Int = 3
-    @AppStorage("shortFocusLongBreak") private var shortFocusLongBreak: Int = 15
-    @AppStorage("deepFocusWork") private var deepFocusWork: Int = 35
-    @AppStorage("deepFocusBreak") private var deepFocusBreak: Int = 10
-    @AppStorage("deepFocusLongBreak") private var deepFocusLongBreak: Int = 30
+    /// 開いたときのプリセット時間。「保存」で本当に編集されたかを判定するのに使う
+    @State private var initialPresetMinutes: (work: Int, breakMin: Int, longBreak: Int) = (0, 0, 0)
 
-    // 厳格な休憩モード
-    @AppStorage("strictBreakMode") private var strictBreakMode: Bool = false
+    private static func storedInt(_ key: String, _ fallback: Int) -> Int {
+        UserDefaults.standard.object(forKey: key) as? Int ?? fallback
+    }
 
     init(timer: PomodoroTimer) {
         self.timer = timer
@@ -1267,6 +1387,57 @@ struct SettingsView: View {
         _startSound = State(initialValue: timer.startSound)
         _separateStartEndSounds = State(initialValue: timer.separateStartEndSounds)
         _soundVolume = State(initialValue: timer.soundVolume)
+
+        let defaults = UserDefaults.standard
+        _importAllowListFormat = State(initialValue: defaults.bool(forKey: "importAllowListFormat"))
+        _indentStyle = State(initialValue: defaults.string(forKey: "indentStyle") ?? "spaces")
+        _indentSpaces = State(initialValue: Self.storedInt("indentSpaces", 2))
+        _appLanguage = State(initialValue: defaults.string(forKey: "appLanguage") ?? "system")
+        _shortFocusWork = State(initialValue: Self.storedInt("shortFocusWork", 12))
+        _shortFocusBreak = State(initialValue: Self.storedInt("shortFocusBreak", 3))
+        _shortFocusLongBreak = State(initialValue: Self.storedInt("shortFocusLongBreak", 15))
+        _deepFocusWork = State(initialValue: Self.storedInt("deepFocusWork", 35))
+        _deepFocusBreak = State(initialValue: Self.storedInt("deepFocusBreak", 10))
+        _deepFocusLongBreak = State(initialValue: Self.storedInt("deepFocusLongBreak", 30))
+        _strictBreakMode = State(initialValue: defaults.bool(forKey: "strictBreakMode"))
+    }
+
+    /// 下書きを現在値から取り直す。
+    /// Settings シーン（⌘,）のビューは一度しか init されず閉じても生き続けるので、
+    /// 開くたびにここで読み直さないと古い値で上書き保存してしまう
+    private func reloadDrafts() {
+        let defaults = UserDefaults.standard
+        workMinutes = timer.workDuration / 60
+        breakMinutes = timer.breakDuration / 60
+        longBreakMinutes = timer.longBreakDuration / 60
+        cycleCount = timer.pomodorosUntilLongBreak
+        soundEnabled = timer.soundEnabled
+        completionSound = timer.completionSound
+        startSound = timer.startSound
+        separateStartEndSounds = timer.separateStartEndSounds
+        soundVolume = timer.soundVolume
+
+        importAllowListFormat = defaults.bool(forKey: "importAllowListFormat")
+        indentStyle = defaults.string(forKey: "indentStyle") ?? "spaces"
+        indentSpaces = Self.storedInt("indentSpaces", 2)
+        appLanguage = defaults.string(forKey: "appLanguage") ?? "system"
+        shortFocusWork = Self.storedInt("shortFocusWork", 12)
+        shortFocusBreak = Self.storedInt("shortFocusBreak", 3)
+        shortFocusLongBreak = Self.storedInt("shortFocusLongBreak", 15)
+        deepFocusWork = Self.storedInt("deepFocusWork", 35)
+        deepFocusBreak = Self.storedInt("deepFocusBreak", 10)
+        deepFocusLongBreak = Self.storedInt("deepFocusLongBreak", 30)
+        strictBreakMode = defaults.bool(forKey: "strictBreakMode")
+
+        initialPresetMinutes = activePresetMinutes
+    }
+
+    /// 現在選択中のプリセットの下書き値
+    private var activePresetMinutes: (work: Int, breakMin: Int, longBreak: Int) {
+        switch timerPreset {
+        case .shortFocus: (shortFocusWork, shortFocusBreak, shortFocusLongBreak)
+        case .deepFocus: (deepFocusWork, deepFocusBreak, deepFocusLongBreak)
+        }
     }
 
     var body: some View {
@@ -1377,9 +1548,6 @@ struct SettingsView: View {
                         Text("English").tag("en")
                         Text("日本語").tag("ja")
                     }
-                    .onChange(of: appLanguage) { _, newValue in
-                        applyLanguage(newValue)
-                    }
                 }
             }
             .formStyle(.grouped)
@@ -1398,15 +1566,39 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 340, height: 520)
+        .onAppear { reloadDrafts() }
     }
 
     private func save() {
-        timer.updateSettings(
-            workMinutes: workMinutes,
-            breakMinutes: breakMinutes,
-            longBreakMinutes: longBreakMinutes,
-            pomodorosUntilLongBreak: cycleCount
-        )
+        let defaults = UserDefaults.standard
+        defaults.set(importAllowListFormat, forKey: "importAllowListFormat")
+        defaults.set(indentStyle, forKey: "indentStyle")
+        defaults.set(indentSpaces, forKey: "indentSpaces")
+        defaults.set(shortFocusWork, forKey: "shortFocusWork")
+        defaults.set(shortFocusBreak, forKey: "shortFocusBreak")
+        defaults.set(shortFocusLongBreak, forKey: "shortFocusLongBreak")
+        defaults.set(deepFocusWork, forKey: "deepFocusWork")
+        defaults.set(deepFocusBreak, forKey: "deepFocusBreak")
+        defaults.set(deepFocusLongBreak, forKey: "deepFocusLongBreak")
+        defaults.set(strictBreakMode, forKey: "strictBreakMode")
+        defaults.set(appLanguage, forKey: "appLanguage")
+        applyLanguage(appLanguage)
+
+        // 選択中プリセットの時間を「このシートで編集した場合だけ」タイマーへ反映する。
+        // updateSettings は走行中のサイクルを畳んでしまうので、
+        // タイマーの現在値ではなく開いたときの下書きと比べる（両者はもともと食い違いうる）
+        let active = activePresetMinutes
+        let changed = active != initialPresetMinutes
+            || cycleCount != timer.pomodorosUntilLongBreak
+        if changed {
+            timer.updateSettings(
+                workMinutes: active.work,
+                breakMinutes: active.breakMin,
+                longBreakMinutes: active.longBreak,
+                pomodorosUntilLongBreak: cycleCount
+            )
+        }
+
         timer.soundEnabled = soundEnabled
         timer.completionSound = completionSound
         timer.startSound = startSound
@@ -1629,6 +1821,14 @@ struct HoldToSkipButton: View {
 
 /// 休憩中に全画面ロックウィンドウを管理するコントローラー
 @MainActor
+/// borderless な NSWindow は既定でキーウィンドウになれず、
+/// SwiftUI の .keyboardShortcut が一切効かなくなるので明示的に許可する
+final class KeyableBorderlessWindow: NSWindow {
+    nonisolated override var canBecomeKey: Bool { true }
+    nonisolated override var canBecomeMain: Bool { true }
+}
+
+@MainActor
 final class BreakLockWindowController: ObservableObject {
     private var window: NSWindow?
 
@@ -1637,7 +1837,7 @@ final class BreakLockWindowController: ObservableObject {
 
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
-        let lockWindow = NSWindow(
+        let lockWindow = KeyableBorderlessWindow(
             contentRect: screenFrame,
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
@@ -1857,7 +2057,7 @@ final class MinimalWindowController: ObservableObject {
         // 固定サイズ、ユーザはリサイズ不可。位置だけ記憶
         let frame = NSRect(origin: savedOrigin() ?? defaultOrigin(), size: Self.fixedSize)
 
-        let win = NSWindow(
+        let win = KeyableBorderlessWindow(
             contentRect: frame,
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,

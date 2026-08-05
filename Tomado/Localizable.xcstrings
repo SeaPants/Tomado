@@ -1,12 +1,8 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-
-    },
-    "・%lld🍅" : {
-
-    },
+    "" : {},
+    "・%lld🍅" : {},
     "%lld/%lld" : {
       "localizations" : {
         "en" : {
@@ -17,15 +13,9 @@
         }
       }
     },
-    "%lld🍅" : {
-
-    },
-    ">" : {
-
-    },
-    "▶" : {
-
-    },
+    "%lld🍅" : {},
+    ">" : {},
+    "▶" : {},
     "alert.completeWithSubtasks.title" : {
       "localizations" : {
         "en" : {
@@ -38,6 +28,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "サブタスクも完了にしますか？"
+          }
+        }
+      }
+    },
+    "alert.deleteWithSubtasks.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete subtasks too?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブタスクも削除しますか？"
+          }
+        }
+      }
+    },
+    "alert.deleteWithSubtasks.message %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This task has %lld subtask(s). They will be deleted together."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスクにはサブタスクが %lld 個あります。まとめて削除されます。"
           }
         }
       }
@@ -479,13 +501,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add a task from the input field above\nor press ⌘V to import"
+            "value" : "Add a task from the input field above\nor press ⌘⌥V to import"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上の入力欄からタスクを追加\nまたは ⌘V でインポート"
+            "value" : "上の入力欄からタスクを追加\nまたは ⌘⌥V でインポート"
           }
         }
       }
@@ -506,9 +528,7 @@
         }
       }
     },
-    "English" : {
-
-    },
+    "English" : {},
     "input.placeholder" : {
       "localizations" : {
         "en" : {
@@ -915,13 +935,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌘⇧I Capture  ⌘V Import  ⌘C Export  ⌘⌫ Clear Done  ⌘⇧⌫ Clear All"
+            "value" : "⌘⇧I Capture  ⌘⌥V Import  ⌘⌥C Export  ⌘⌫ Clear Done  ⌘⇧⌫ Clear All"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌘⇧I キャプチャ  ⌘V 読込  ⌘C 書出  ⌘⌫ 完了削除  ⌘⇧⌫ 全削除"
+            "value" : "⌘⇧I キャプチャ  ⌘⌥V 読込  ⌘⌥C 書出  ⌘⌫ 完了削除  ⌘⇧⌫ 全削除"
           }
         }
       }
@@ -1519,9 +1539,7 @@
         }
       }
     },
-    "日本語" : {
-
-    }
+    "日本語" : {}
   },
   "version" : "1.0"
 }
