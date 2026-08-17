@@ -1,5 +1,52 @@
 import SwiftUI
 
+// MARK: - Shared Formatting
+
+/// タイマー表示まわりの共通整形（標準 / ミニマル / 休憩ロックの 3 画面で共有）
+enum TomadoFormat {
+    /// 残り時間。1 時間を超える休み（昼休みなど）も分で押し通す。
+    /// H:MM:SS に伸ばすと巨大フォントの表示枠（ミニマル 220pt / 休憩ロックのリング）を割る
+    static func timer(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    /// 24 時間表記の時刻。1 秒ごとに呼ばれる経路なので DateFormatter は作らない
+    static func clock(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    }
+
+    /// 時間割モードのフェーズ表示（「2限 3/6」「休み時間 → 3限 13:30」）
+    static func timetablePhase(_ segment: TimetableSegment) -> String {
+        switch segment.kind {
+        case .work:
+            return String(
+                localized:
+                    "timetable.work \(segment.periodIndex) \(segment.sessionIndex) \(segment.sessionsPerPeriod)"
+            )
+        case .shortBreak:
+            return String(
+                localized:
+                    "timetable.break \(segment.periodIndex) \(segment.sessionIndex) \(segment.sessionsPerPeriod)"
+            )
+        case .longBreak:
+            if let next = segment.nextPeriodIndex, let start = segment.nextPeriodStart {
+                return String(localized: "timetable.recess \(next) \(clock(start))")
+            }
+            return String(localized: "timetable.dayEnd")
+        }
+    }
+
+    /// 現フェーズの進捗 (0...1)
+    @MainActor
+    static func phaseProgress(_ timer: PomodoroTimer) -> Double {
+        let total = timer.phaseTotalSeconds
+        guard total > 0 else { return 0 }
+        return min(1, max(0, 1.0 - (Double(timer.remainingSeconds) / Double(total))))
+    }
+}
+
 struct FocusedMainView: View {
     @ObservedObject var timer: PomodoroTimer
     @ObservedObject var taskListVM: TaskListViewModel
@@ -25,6 +72,7 @@ struct FocusedMainView: View {
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
     @AppStorage("timerPreset") private var timerPreset: TimerPreset = .shortFocus  // タイマープリセット
     @AppStorage("strictBreakMode") private var strictBreakMode: Bool = false  // 厳格な休憩モード
+    @State private var breakLockSuppressedUntil: Date?  // 長押しスキップでロックを見送る区間の終わり
     @StateObject private var breakLockController = BreakLockWindowController()
     // タイマープリセット設定（カスタマイズ可能）
     @AppStorage("shortFocusWork") private var shortFocusWork: Int = 12
@@ -80,6 +128,13 @@ struct FocusedMainView: View {
             updateBreakLock()
         }
         .onChange(of: strictBreakMode) { _, _ in
+            applyWindowLevel()
+            updateBreakLock()
+        }
+        .onChange(of: timer.currentSegment) { _, _ in
+            // 見送りは「あの区間の残り」に対する約束。区間が変われば（時刻が進んでも
+            // 粒度を変えても）失効させないと、別の休憩のロックまで抑えてしまう
+            breakLockSuppressedUntil = nil
             applyWindowLevel()
             updateBreakLock()
         }
@@ -210,16 +265,7 @@ struct FocusedMainView: View {
     }
 
     /// 現フェーズの進捗 (0...1) - 標準モードのリングが使う
-    private var phaseProgress: Double {
-        let total: Int
-        switch timer.currentPhase {
-        case .work: total = timer.workDuration
-        case .break_: total = timer.breakDuration
-        case .longBreak: total = timer.longBreakDuration
-        }
-        guard total > 0 else { return 0 }
-        return 1.0 - (Double(timer.remainingSeconds) / Double(total))
-    }
+    private var phaseProgress: Double { TomadoFormat.phaseProgress(timer) }
 
     // MARK: - Mode Toggles & Break Lock
 
@@ -228,11 +274,20 @@ struct FocusedMainView: View {
         TomadoAppDelegate.shared?.toggleMinimalMode()
     }
 
+    /// 厳格な休憩で拘束してよい休憩か。
+    /// 時間割モードの長い休み（昼休みなど）は「休憩」ではなく「休み時間」なので対象外
+    private var isLockableBreak: Bool {
+        guard timer.currentPhase != .work else { return false }
+        if timer.isTimetableActive && timer.phaseTotalSeconds > Self.breakLockMaxSeconds {
+            return false
+        }
+        return true
+    }
+
     /// 厳格な休憩モード中は強制 topmost、それ以外はユーザー設定に従う
     private func applyWindowLevel() {
         guard let window = TomadoAppDelegate.shared?.mainWindow else { return }
-        let inBreak = timer.currentPhase != .work
-        if strictBreakMode && inBreak {
+        if strictBreakMode && isLockableBreak {
             window.level = .floating
         } else {
             window.level = isTopmost ? .floating : .normal
@@ -241,17 +296,29 @@ struct FocusedMainView: View {
 
     /// 休憩フェーズに合わせてフルスクリーンロックウィンドウを表示/非表示
     private func updateBreakLock() {
-        let inBreak = timer.currentPhase != .work
-        guard strictBreakMode && inBreak else {
+        guard strictBreakMode && isLockableBreak else {
+            breakLockController.hide()
+            return
+        }
+        // 長押しスキップで見送ると決めた区間の間は出さない
+        if let until = breakLockSuppressedUntil, until > Date() {
             breakLockController.hide()
             return
         }
         // シート表示中にロックを被せるとシートごと閉じ込めてしまうので、閉じるまで待つ
         guard !showSettings && !showQuickCapture else { return }
         breakLockController.show(timer: timer, onSkip: {
+            // 時間割モードでは休憩を飛ばせない（壁時計が正）ので、ロックだけ下ろす
+            if timer.isTimetableActive {
+                breakLockSuppressedUntil = timer.currentSegment?.end
+                breakLockController.hide()
+            }
             showToast(String(localized: "toast.skipped"))
         })
     }
+
+    /// これより長い休憩は「休み時間」とみなし、厳格な休憩の全画面ロックを掛けない
+    private static let breakLockMaxSeconds = 20 * 60
 
     // MARK: - Input Section
 
@@ -332,6 +399,9 @@ struct FocusedMainView: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .foregroundColor(timer.isRunning ? .primary : .primary.opacity(0.55))
+                // 長い休み時間 (66:40 など) でも桁を落とさない
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleTimer() }
 
@@ -399,6 +469,8 @@ struct FocusedMainView: View {
                     showToast(String(localized: "toast.skipped"))
                 }
             )
+            // 時間割モードでは区切りは壁時計が決めるので飛ばせない
+            .disabled(timer.isTimetableActive)
             .keyboardShortcut("s", modifiers: .command)
 
             // リセットボタン
@@ -571,6 +643,36 @@ struct FocusedMainView: View {
         }
     }
 
+    private func timetableButton() -> some View {
+        let isPressed = pressedButton == "timetable"
+        let isOn = timer.timetableEnabled
+
+        return Button(action: {
+            flashButton("timetable")
+            toggleTimetableMode()
+        }) {
+            Image(systemName: isOn ? "calendar.badge.clock" : "calendar")
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(isOn ? .teal : .secondary)
+        .scaleEffect(isPressed ? 1.3 : 1.0)
+        .animation(.easeOut(duration: 0.1), value: isPressed)
+        .help(String(localized: "tooltip.timetable"))
+    }
+
+    private func toggleTimetableMode() {
+        timer.timetableEnabled.toggle()
+        breakLockSuppressedUntil = nil
+        applyWindowLevel()
+        updateBreakLock()
+        showToast(
+            timer.timetableEnabled
+                ? String(localized: "toast.timetableOn")
+                : String(localized: "toast.timetableOff")
+        )
+    }
+
     private func topmostButton() -> some View {
         let isPressed = pressedButton == "topmost"
 
@@ -674,6 +776,8 @@ struct FocusedMainView: View {
                     showToast(String(localized: "toast.skipped"))
                 }
             )
+            // 時間割モードでは区切りは壁時計が決めるので飛ばせない
+            .disabled(timer.isTimetableActive)
             .keyboardShortcut("s", modifiers: .command)
 
             controlButton(
@@ -1107,6 +1211,8 @@ struct FocusedMainView: View {
             Spacer()
 
             // 視覚状態が重要な toggle 類だけ常時表示
+            timetableButton()
+                .keyboardShortcut("k", modifiers: [.command, .shift])
             timerPresetButton()
                 .keyboardShortcut("t", modifiers: [.command, .shift])
             viewModeButton()
@@ -1304,13 +1410,12 @@ struct FocusedMainView: View {
         }
     }
 
-    private func formatTime(_ seconds: Int) -> String {
-        let mins = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%02d:%02d", mins, secs)
-    }
+    private func formatTime(_ seconds: Int) -> String { TomadoFormat.timer(seconds) }
 
     private var phaseText: String {
+        if let segment = timer.currentSegment {
+            return TomadoFormat.timetablePhase(segment)
+        }
         let cycle = timer.sessionPomodoros + 1
         let total = timer.pomodorosUntilLongBreak
         switch timer.currentPhase {
@@ -1365,6 +1470,10 @@ struct SettingsView: View {
     @State private var deepFocusBreak: Int
     @State private var deepFocusLongBreak: Int
     @State private var strictBreakMode: Bool
+    @State private var timetableEnabled: Bool
+    @State private var timetableSessions: Int
+    @State private var timetableRatio: Int
+    @State private var timetableText: String
 
     /// 現在選択中のプリセット（保存時に、編集されたプリセットの時間をタイマーへ反映するのに使う）
     @AppStorage("timerPreset") private var timerPreset: FocusedMainView.TimerPreset = .shortFocus
@@ -1400,6 +1509,10 @@ struct SettingsView: View {
         _deepFocusBreak = State(initialValue: Self.storedInt("deepFocusBreak", 10))
         _deepFocusLongBreak = State(initialValue: Self.storedInt("deepFocusLongBreak", 30))
         _strictBreakMode = State(initialValue: defaults.bool(forKey: "strictBreakMode"))
+        _timetableEnabled = State(initialValue: timer.timetableEnabled)
+        _timetableSessions = State(initialValue: timer.timetableSessions)
+        _timetableRatio = State(initialValue: Int(timer.timetableRatio.rounded()))
+        _timetableText = State(initialValue: timer.timetable.text)
     }
 
     /// 下書きを現在値から取り直す。
@@ -1428,8 +1541,38 @@ struct SettingsView: View {
         deepFocusBreak = Self.storedInt("deepFocusBreak", 10)
         deepFocusLongBreak = Self.storedInt("deepFocusLongBreak", 30)
         strictBreakMode = defaults.bool(forKey: "strictBreakMode")
+        timetableEnabled = timer.timetableEnabled
+        timetableSessions = timer.timetableSessions
+        timetableRatio = Int(timer.timetableRatio.rounded())
+        timetableText = timer.timetable.text
 
         initialPresetMinutes = activePresetMinutes
+    }
+
+    /// 下書きのテキストから読める時限表と、読めなかった行数
+    private var parsedTimetable: (timetable: Timetable, errors: [Int]) {
+        Timetable.parse(timetableText)
+    }
+
+    /// 「100分 → 🐢 26:40 + 6:40 ／ 🐇 13:20 + 3:20」の行を、時限の長さごとに作る
+    private var timetablePreviewLines: [String] {
+        let periods = parsedTimetable.timetable.periods
+        guard !periods.isEmpty else { return [] }
+
+        var seen: Set<Int> = []
+        return periods.compactMap { period in
+            let minutes = period.lengthMinutes
+            guard minutes > 0, seen.insert(minutes).inserted else { return nil }
+            let ratio = Double(timetableRatio)
+            let coarse = TimetableSchedule.durations(
+                periodMinutes: minutes, sessions: timetableSessions, ratio: ratio)
+            let fine = TimetableSchedule.durations(
+                periodMinutes: minutes, sessions: timetableSessions * 2, ratio: ratio)
+            return String(
+                localized:
+                    "settings.timetable.preview \(minutes) \(TomadoFormat.timer(coarse.work)) \(TomadoFormat.timer(coarse.breakTime)) \(TomadoFormat.timer(fine.work)) \(TomadoFormat.timer(fine.breakTime))"
+            )
+        }
     }
 
     /// 現在選択中のプリセットの下書き値
@@ -1471,6 +1614,54 @@ struct SettingsView: View {
                     Stepper(String(localized: "settings.work \(deepFocusWork)"), value: $deepFocusWork, in: 1...60)
                     Stepper(String(localized: "settings.break \(deepFocusBreak)"), value: $deepFocusBreak, in: 1...30)
                     Stepper(String(localized: "settings.longBreak \(deepFocusLongBreak)"), value: $deepFocusLongBreak, in: 1...60)
+                }
+
+                Section("🗓 " + String(localized: "settings.timetable")) {
+                    Toggle(String(localized: "settings.timetable.enabled"), isOn: $timetableEnabled)
+                        .help(String(localized: "settings.timetable.help"))
+
+                    Stepper(
+                        String(localized: "settings.timetable.sessions \(timetableSessions)"),
+                        value: $timetableSessions, in: 1...8
+                    )
+                    Stepper(
+                        String(localized: "settings.timetable.ratio \(timetableRatio)"),
+                        value: $timetableRatio, in: 2...9
+                    )
+
+                    Text(String(localized: "settings.timetable.periods"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextEditor(text: $timetableText)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(height: 76)
+                        .scrollContentBackground(.hidden)
+                        .padding(4)
+                        .background(Color.primary.opacity(0.04))
+                        .cornerRadius(6)
+
+                    ForEach(timetablePreviewLines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // 空にしても黙って前の時限表に戻る、を避ける
+                    if parsedTimetable.timetable.isEmpty {
+                        Text(String(localized: "settings.timetable.needsPeriods"))
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !parsedTimetable.errors.isEmpty {
+                        Text(
+                            String(
+                                localized:
+                                    "settings.timetable.invalidLines \(parsedTimetable.errors.count)")
+                        )
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    }
                 }
 
                 Section(String(localized: "settings.breakLock")) {
@@ -1604,6 +1795,16 @@ struct SettingsView: View {
         timer.startSound = startSound
         timer.separateStartEndSounds = separateStartEndSounds
         timer.soundVolume = soundVolume
+
+        // 時間割は「読めた行だけ」を採用する。1 行も読めなければ既存の時限表を残す
+        let parsed = parsedTimetable.timetable
+        if !parsed.isEmpty {
+            timer.timetable = parsed
+        }
+        timer.timetableSessions = timetableSessions
+        timer.timetableRatio = Double(timetableRatio)
+        timer.timetableEnabled = timetableEnabled
+        timer.refreshTimetable()
     }
 
     private func playSound(_ soundName: String) {
@@ -1893,6 +2094,10 @@ struct BreakLockView: View {
     }
 
     private var phaseLabel: String {
+        if timer.currentPhase == .work { return "" }
+        if let segment = timer.currentSegment {
+            return TomadoFormat.timetablePhase(segment)
+        }
         switch timer.currentPhase {
         case .work: return ""
         case .break_: return String(localized: "phase.break \(timer.sessionPomodoros + 1) \(timer.pomodorosUntilLongBreak)")
@@ -1900,16 +2105,7 @@ struct BreakLockView: View {
         }
     }
 
-    private var phaseProgress: Double {
-        let total: Int
-        switch timer.currentPhase {
-        case .work: total = timer.workDuration
-        case .break_: total = timer.breakDuration
-        case .longBreak: total = timer.longBreakDuration
-        }
-        guard total > 0 else { return 0 }
-        return 1.0 - (Double(timer.remainingSeconds) / Double(total))
-    }
+    private var phaseProgress: Double { TomadoFormat.phaseProgress(timer) }
 
     /// 30秒ごとに切替わるウェルネスメッセージ
     private var wellnessMessages: [String] {
@@ -1928,11 +2124,7 @@ struct BreakLockView: View {
         return messages[wellnessIndex % messages.count]
     }
 
-    private func formatTime(_ seconds: Int) -> String {
-        let mins = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%02d:%02d", mins, secs)
-    }
+    private func formatTime(_ seconds: Int) -> String { TomadoFormat.timer(seconds) }
 
     var body: some View {
         ZStack {
@@ -1983,6 +2175,10 @@ struct BreakLockView: View {
                         .foregroundColor(.primary)
                         .monospacedDigit()
                         .contentTransition(.numericText())
+                        // 60 分超の休憩でもリングの内側に収める
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .frame(maxWidth: 290)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             if timer.isRunning { timer.pause() } else { timer.start() }
@@ -2160,18 +2356,12 @@ struct MinimalTimerView: View {
         }
     }
 
-    private var phaseProgress: Double {
-        let total: Int
-        switch timer.currentPhase {
-        case .work: total = timer.workDuration
-        case .break_: total = timer.breakDuration
-        case .longBreak: total = timer.longBreakDuration
-        }
-        guard total > 0 else { return 0 }
-        return 1.0 - (Double(timer.remainingSeconds) / Double(total))
-    }
+    private var phaseProgress: Double { TomadoFormat.phaseProgress(timer) }
 
     private var phaseLabel: String {
+        if let segment = timer.currentSegment {
+            return TomadoFormat.timetablePhase(segment)
+        }
         switch timer.currentPhase {
         case .work:
             return String(localized: "phase.work \(timer.sessionPomodoros + 1) \(timer.pomodorosUntilLongBreak)")
@@ -2182,11 +2372,7 @@ struct MinimalTimerView: View {
         }
     }
 
-    private func formatTime(_ seconds: Int) -> String {
-        let mins = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%02d:%02d", mins, secs)
-    }
+    private func formatTime(_ seconds: Int) -> String { TomadoFormat.timer(seconds) }
 
     var body: some View {
         ZStack {
@@ -2212,6 +2398,10 @@ struct MinimalTimerView: View {
                     .foregroundColor(timer.isRunning ? .primary : .primary.opacity(0.5))
                     .monospacedDigit()
                     .contentTransition(.numericText())
+                    // 固定 220pt のミニマル窓でも 66:40 を切り落とさない
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .padding(.horizontal, 8)
                     .contentShape(Rectangle())
                     .onTapGesture { toggleTimer() }
 

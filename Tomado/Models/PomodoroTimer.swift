@@ -88,6 +88,43 @@ public class PomodoroTimer: ObservableObject {
             saveSettings()
         }
     }
+    // MARK: 時間割モード（絶対時刻ベース）
+
+    /// 時間割モード。ON の間、フェーズは「押した時刻」ではなく壁時計が決める
+    @Published public var timetableEnabled: Bool = false {
+        didSet {
+            guard !isInitializing, oldValue != timetableEnabled else { return }
+            saveSettings()
+            refreshTimetable()
+        }
+    }
+    /// 時限表
+    @Published public var timetable: Timetable = .standard {
+        didSet {
+            guard !isInitializing, oldValue != timetable else { return }
+            saveSettings()
+            refreshTimetable()
+        }
+    }
+    /// 🐢 側の「1 時限あたりのセッション数」。🐇 はこの 2 倍になる（Short×2 = Long）
+    @Published public var timetableSessions: Int = 3 {
+        didSet {
+            guard !isInitializing, oldValue != timetableSessions else { return }
+            saveSettings()
+            refreshTimetable()
+        }
+    }
+    /// 作業:休憩 の比（4 なら 4:1）
+    @Published public var timetableRatio: Double = 4.0 {
+        didSet {
+            guard !isInitializing, oldValue != timetableRatio else { return }
+            saveSettings()
+            refreshTimetable()
+        }
+    }
+    /// 時間割モードで現在いる区間。時間割の外（始業前・終業後）や OFF のときは nil
+    @Published public private(set) var currentSegment: TimetableSegment?
+
     @Published public var soundEnabled: Bool = true {
         didSet {
             saveSettings()
@@ -116,6 +153,7 @@ public class PomodoroTimer: ObservableObject {
     @Published public private(set) var availableSounds: [String] = []
 
     private var timer: Timer?
+    private var tickerInterval: TimeInterval = 0
     private var isInitializing = false
     private var audioPlayer: AVAudioPlayer?
 
@@ -147,6 +185,210 @@ public class PomodoroTimer: ObservableObject {
 
         // アプリケーションの状態変化を監視
         setupApplicationObservers()
+
+        // 時間割モードなら、起動直後から壁時計に合わせる
+        refreshTimetable()
+    }
+
+    // MARK: - Timetable Mode
+
+    /// 現在有効な時間割スケジュール（OFF・時限が空なら nil）
+    public var schedule: TimetableSchedule? {
+        guard timetableEnabled, !timetable.isEmpty else { return nil }
+        return TimetableSchedule(
+            timetable: timetable,
+            sessionsPerPeriod: effectiveSessionsPerPeriod,
+            workBreakRatio: timetableRatio
+        )
+    }
+
+    /// 🐇 なら 2 倍、🐢 ならそのまま。プリセットは View 側の @AppStorage が正なのでここで読む
+    public var effectiveSessionsPerPeriod: Int {
+        let isFine = (UserDefaults.standard.string(forKey: "timerPreset") ?? "shortFocus")
+            != "deepFocus"
+        return max(1, isFine ? timetableSessions * 2 : timetableSessions)
+    }
+
+    /// 時間割が今この瞬間を支配しているか（始業前・終業後は false → 通常のポモドーロに戻る）
+    public var isTimetableActive: Bool { currentSegment != nil }
+
+    /// 現在フェーズの総尺（進捗バー用）。時間割モードでは区間ごとに変わる
+    public var phaseTotalSeconds: Int {
+        if let segment = currentSegment { return segment.totalSeconds }
+        switch currentPhase {
+        case .work: return max(1, workDuration)
+        case .break_: return max(1, breakDuration)
+        case .longBreak: return max(1, longBreakDuration)
+        }
+    }
+
+    /// 1 🍅 に相当する作業秒数。時間割モードでは時限から導かれる
+    public var workSegmentSeconds: Int {
+        if let segment = currentSegment, segment.workSeconds > 0 { return segment.workSeconds }
+        return max(1, workDuration)
+    }
+
+    /// 時間割の設定・プリセットが変わったときに、その場で壁時計へ合わせ直す。
+    /// 既定では「引き直し」扱いでチャイムを鳴らさない
+    public func refreshTimetable(announceFreshBoundary: Bool = false) {
+        updateTickerState()
+
+        guard timetableEnabled, let segment = schedule?.segment(at: Date()) else {
+            if currentSegment != nil { leaveTimetableMode() }
+            return
+        }
+        let now = Date()
+        // 直前に越えたばかりの区切りなら、引き直しで飲み込まずに鳴らす
+        let isFresh =
+            announceFreshBoundary
+            && now.timeIntervalSince(segment.start) < Self.freshBoundaryGrace
+        applyTimetableSegment(segment, now: now, silent: !isFresh)
+    }
+
+    /// これ以内に始まった区間は「今まさに越えた区切り」として扱う
+    private static let freshBoundaryGrace: TimeInterval = 15
+
+    /// 壁時計から求めた区間を反映する。
+    /// silent は「時刻が進んだのではなく設定を引き直しただけ」を意味する
+    private func applyTimetableSegment(_ segment: TimetableSegment, now: Date, silent: Bool) {
+        let previous = currentSegment
+        // 開始時刻は Double 演算の結果なので、厳密比較だと 1 ULP の差を
+        // 「区切りを越えた」と読んでしまう。秒より細かい差は同じ区間とみなす
+        let crossedBoundary =
+            previous == nil || previous!.kind != segment.kind
+            || abs(previous!.start.timeIntervalSince(segment.start)) > 0.001
+
+        if crossedBoundary {
+            handleTimetableBoundary(from: previous, to: segment, now: now, silent: silent)
+        }
+
+        currentSegment = segment
+        if crossedBoundary { updateTickerState() }
+
+        let phase: Phase
+        switch segment.kind {
+        case .work: phase = .work
+        case .shortBreak: phase = .break_
+        case .longBreak: phase = .longBreak
+        }
+        if currentPhase != phase { currentPhase = phase }
+
+        remainingSeconds = max(0, Int(segment.end.timeIntervalSince(now).rounded(.up)))
+
+        // 実作業時間の累積（一時停止中は伸ばさない）
+        if isRunning {
+            if isInterruptionMode {
+                if let interruptionStart = interruptionStartTime {
+                    accumulatedInterruptionSeconds = Int(now.timeIntervalSince(interruptionStart))
+                }
+            } else if phase == .work, let taskId = currentTask?.id, let taskStart = taskStartTime {
+                accumulatedWorkSecondsByTask[taskId] = max(
+                    0, Int(now.timeIntervalSince(taskStart) - taskPausedDuration))
+            }
+        }
+
+        if crossedBoundary || remainingSeconds % 30 == 0 {
+            saveTimerState()
+        }
+    }
+
+    /// 区間の境目（＝チャイム）の処理
+    private func handleTimetableBoundary(
+        from previous: TimetableSegment?, to segment: TimetableSegment, now: Date, silent: Bool
+    ) {
+        // 直前が作業ブロックなら、そこまでの実績を確定させる
+        // （currentPhase はまだ更新前なので、work のときだけ記録される）
+        // 起動直後（previous == nil かつ停止中）は、前回セッションの積み残しを
+        // リスナー登録前に取りこぼさないよう触らない
+        if previous != nil || isRunning {
+            closeOutWorkBlock(previous, now: now)
+            recordAllAccumulatedProgress()
+        }
+
+        // 「押していなくてもチャイムは鳴る」— 時間割モードの一時停止は作業計上を止めるだけ。
+        // 始業（時間割の外から 1 限へ）も区切りなので鳴らす
+        if !silent {
+            playBoundarySound(entering: segment.kind)
+        }
+
+        // 表示用の「済んだセッション数」
+        sessionPomodoros =
+            segment.kind == .work
+            ? max(0, segment.sessionIndex - 1)
+            : min(segment.sessionIndex, segment.sessionsPerPeriod)
+
+        // 通常モード用のタイムスタンプは、時間割モードでは参照されないが整合させておく
+        phaseStartTime = segment.start
+        totalPausedDuration = 0
+
+        if segment.kind == .work, isRunning, currentTask != nil {
+            // 時刻が進んで区切りに達したのなら区間の頭から数える（tick は最大 1 秒遅れて
+            // 来るので、now を起点にすると 1 フェーズ働いても 1🍅 に届かない）。
+            // 設定を引き直しただけのときは区間の途中に居るので、過去は遡らない
+            taskStartTime = silent ? now : segment.start
+            taskPausedDuration = 0
+        } else {
+            taskStartTime = nil
+            taskPausedDuration = 0
+        }
+    }
+
+    /// 終わった作業ブロックを、その区間の終わりまでで締める。
+    /// tick は workEnd を過ぎてから来るので、放っておくと最後の 1 秒が欠けて
+    /// 1600/1600 のはずが 1599/1600 になり、🍅 の整数が永久に 1 つ遅れる
+    private func closeOutWorkBlock(_ previous: TimetableSegment?, now: Date) {
+        guard let previous, previous.kind == .work,
+            isRunning, !isInterruptionMode,
+            let taskId = currentTask?.id, let taskStart = taskStartTime
+        else { return }
+
+        let workedUntil = min(now, previous.end)
+        let worked = workedUntil.timeIntervalSince(taskStart) - taskPausedDuration
+        guard worked > 0 else { return }
+        accumulatedWorkSecondsByTask[taskId] = max(
+            accumulatedWorkSecondsByTask[taskId] ?? 0, Int(worked.rounded()))
+    }
+
+    /// 時間割の外へ出た（終業・時間割 OFF）。通常のポモドーロへ戻す
+    private func leaveTimetableMode() {
+        recordAllAccumulatedProgress()
+
+        currentSegment = nil
+        currentPhase = .work
+        remainingSeconds = workDuration
+        sessionPomodoros = 0
+        phaseStartTime = isRunning ? Date() : nil
+        totalPausedDuration = 0
+        pausedAt = isRunning ? nil : Date()
+        taskStartTime = (isRunning && currentTask != nil) ? Date() : nil
+        taskPausedDuration = 0
+
+        saveTimerState()
+        updateTickerState()
+    }
+
+    /// 時間割モードでは停止中も 1 秒刻みが要る（壁時計を映し続けるため）。
+    /// ただし時間割の外で止まっているだけのときは、始業を拾える粗さまで落とす
+    private func updateTickerState() {
+        guard isRunning || timetableEnabled else {
+            timer?.invalidate()
+            timer = nil
+            tickerInterval = 0
+            return
+        }
+
+        let desired: TimeInterval = (isRunning || currentSegment != nil) ? 1.0 : 5.0
+        guard timer == nil || tickerInterval != desired else { return }
+
+        timer?.invalidate()
+        let ticker = Timer.scheduledTimer(withTimeInterval: desired, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.handleTick()
+            }
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        timer = ticker
+        tickerInterval = desired
     }
 
     // MARK: - Application State Observers
@@ -178,6 +420,13 @@ public class PomodoroTimer: ObservableObject {
 
     /// アプリがアクティブになった時の処理
     private func handleAppDidBecomeActive() {
+        // 時間割モードは常に壁時計から引き直す（スリープ復帰でもズレない）。
+        // アクティブ化が区切りと同じ瞬間に来ても、そのチャイムを飲み込まない
+        if timetableEnabled {
+            refreshTimetable(announceFreshBoundary: true)
+            return
+        }
+
         guard isRunning, let startTime = phaseStartTime else { return }
 
         // タイムスタンプベースで正確な残り時間を再計算
@@ -242,6 +491,13 @@ public class PomodoroTimer: ObservableObject {
             separateStartEndSounds, forKey: "pomodoro_separate_start_end_sounds")
         UserDefaults.standard.set(startSound, forKey: "pomodoro_start_sound")
         UserDefaults.standard.set(soundVolume, forKey: "pomodoro_sound_volume")
+
+        UserDefaults.standard.set(timetableEnabled, forKey: "timetable_enabled")
+        UserDefaults.standard.set(timetableSessions, forKey: "timetable_sessions")
+        UserDefaults.standard.set(timetableRatio, forKey: "timetable_ratio")
+        if let encoded = try? JSONEncoder().encode(timetable) {
+            UserDefaults.standard.set(encoded, forKey: "timetable_periods")
+        }
     }
 
     private func loadSettings() {
@@ -286,6 +542,29 @@ public class PomodoroTimer: ObservableObject {
             soundVolume = UserDefaults.standard.double(forKey: "pomodoro_sound_volume")
         }
 
+        if UserDefaults.standard.object(forKey: "timetable_enabled") != nil {
+            timetableEnabled = UserDefaults.standard.bool(forKey: "timetable_enabled")
+        }
+
+        if let stored = UserDefaults.standard.object(forKey: "timetable_sessions") as? Int,
+            stored > 0
+        {
+            timetableSessions = stored
+        }
+
+        if let stored = UserDefaults.standard.object(forKey: "timetable_ratio") as? Double,
+            stored > 0
+        {
+            timetableRatio = stored
+        }
+
+        if let data = UserDefaults.standard.data(forKey: "timetable_periods"),
+            let decoded = try? JSONDecoder().decode(Timetable.self, from: data)
+        {
+            let clean = decoded.sanitized()
+            if !clean.isEmpty { timetable = clean }
+        }
+
         // 現在のフェーズに応じて remainingSeconds を更新
         switch currentPhase {
         case .work:
@@ -303,6 +582,14 @@ public class PomodoroTimer: ObservableObject {
 
     /// タイマーの現在状態を保存
     private func saveTimerState() {
+        // 時間割モードのフェーズは壁時計から毎回引き直せるので保存しない。
+        // 書き込むと、時間割の外（夜など）で再起動したときに
+        // 「休み時間の残り 20:00」のような時間割由来の値を通常モードが拾ってしまう
+        guard !isTimetableActive else {
+            saveAccumulatedWorkTime()
+            return
+        }
+
         UserDefaults.standard.set(remainingSeconds, forKey: "pomodoro_remaining_seconds")
         UserDefaults.standard.set(currentPhase.rawValue, forKey: "pomodoro_current_phase")
         UserDefaults.standard.set(sessionPomodoros, forKey: "pomodoro_session_count")
@@ -443,6 +730,7 @@ public class PomodoroTimer: ObservableObject {
     public func updateSettings(
         workMinutes: Int, breakMinutes: Int, longBreakMinutes: Int, pomodorosUntilLongBreak: Int
     ) {
+        let wasRunning = isRunning
         pause()
 
         isInitializing = true
@@ -451,26 +739,49 @@ public class PomodoroTimer: ObservableObject {
         breakDuration = breakMinutes * 60
         longBreakDuration = longBreakMinutes * 60
         self.pomodorosUntilLongBreak = pomodorosUntilLongBreak
-        remainingSeconds = workDuration
-        currentPhase = .work
-        sessionPomodoros = 0
 
-        // フェーズのタイムスタンプも必ずクリアする。
-        // 残したままだと handleTick が「経過 > 新しいフェーズ長」と判定して即完了してしまう
-        phaseStartTime = nil
-        totalPausedDuration = 0
-        pausedAt = nil
-        taskStartTime = nil
-        taskPausedDuration = 0
+        // 時間割モードのときは走行中のサイクルが壁時計側にあるので畳まない
+        if !isTimetableActive {
+            remainingSeconds = workDuration
+            currentPhase = .work
+            sessionPomodoros = 0
+
+            // フェーズのタイムスタンプも必ずクリアする。
+            // 残したままだと handleTick が「経過 > 新しいフェーズ長」と判定して即完了してしまう
+            phaseStartTime = nil
+            totalPausedDuration = 0
+            pausedAt = nil
+            taskStartTime = nil
+            taskPausedDuration = 0
+        }
 
         isInitializing = false
 
         // 設定を保存
         saveSettings()
+
+        // プリセット切替は 🐇/🐢 のセッション数も変えるので、時間割を取り直す
+        refreshTimetable()
+
+        // 時間割モードでは壁時計が止まらない。設定をいじっただけで
+        // 「カウントダウンは進むのに作業が計上されない」状態に落とさない
+        if isTimetableActive && wasRunning && !isRunning {
+            start()
+        }
     }
 
     public func resetCycle() {
+        let wasRunning = isRunning
         pause()
+
+        // 時間割モードではサイクルは壁時計のもの。実績だけ巻き戻して、走行状態は保つ
+        guard !isTimetableActive else {
+            accumulatedWorkSecondsByTask.removeAll()
+            saveTimerState()
+            if wasRunning { start() }
+            return
+        }
+
         isInitializing = true
         currentPhase = .work
         remainingSeconds = workDuration
@@ -519,17 +830,8 @@ public class PomodoroTimer: ObservableObject {
         pausedAt = nil
 
         timer?.invalidate()  // 既存のタイマーがあれば停止
-
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.handleTick()
-            }
-        }
-
-        // Make sure timer runs on main run loop
-        if let timer = timer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        timer = nil
+        updateTickerState()
 
         if let task = currentTask {
             currentTask = task
@@ -549,8 +851,8 @@ public class PomodoroTimer: ObservableObject {
 
         isRunning = false
         pausedAt = Date()
-        timer?.invalidate()
-        timer = nil
+        // 時間割モードでは止めても壁時計は進むので、刻みは残す
+        updateTickerState()
 
         // 一時停止時に累積作業時間を記録（次回再開時のため）
         recordCurrentProgress()
@@ -567,6 +869,9 @@ public class PomodoroTimer: ObservableObject {
     }
 
     public func skip() {
+        // 時間割モードでは区切りは壁時計が決めるので、先送りできない
+        guard !isTimetableActive else { return }
+
         // 停止中にスキップしても勝手に走り出さないよう、元の状態を保つ
         let wasRunning = isRunning
         pause()
@@ -589,7 +894,20 @@ public class PomodoroTimer: ObservableObject {
         // リセット前に現在の進捗を記録
         recordCurrentProgress()
 
+        let wasRunning = isRunning
         pause()
+
+        // 時間割モードでは残り時間は壁時計のもの。実績だけリセットして、走行状態は保つ
+        guard !isTimetableActive else {
+            if let taskId = currentTask?.id {
+                accumulatedWorkSecondsByTask[taskId] = 0
+            }
+            accumulatedInterruptionSeconds = 0
+            saveTimerState()
+            if wasRunning { start() }
+            return
+        }
+
         phaseStartTime = nil
         totalPausedDuration = 0
         pausedAt = nil
@@ -625,8 +943,9 @@ public class PomodoroTimer: ObservableObject {
             // タスクIDから経過ポモドーロを計算
             // 1/100 単位に丸めない: 記録が複数回に分かれると切り捨て誤差が積もり、
             // 1フェーズ働いても実績が 1.00 に届かなくなる
-            guard workDuration > 0 else { continue }
-            let elapsedPomodoros = Double(seconds) / Double(workDuration)
+            let denominator = workSegmentSeconds
+            guard denominator > 0 else { continue }
+            let elapsedPomodoros = Double(seconds) / Double(denominator)
 
             guard elapsedPomodoros > 0 else { continue }
 
@@ -661,6 +980,19 @@ public class PomodoroTimer: ObservableObject {
     }
 
     private func handleTick() {
+        // 時間割モード: フェーズは壁時計が決める（停止中でも進む）
+        if timetableEnabled, let segment = schedule?.segment(at: Date()) {
+            applyTimetableSegment(segment, now: Date(), silent: false)
+            return
+        }
+        if currentSegment != nil {
+            // 時間割の外へ出た（終業など）→ 通常のポモドーロへ
+            leaveTimetableMode()
+        }
+
+        // 通常モードは走っている間だけ進む
+        guard isRunning else { return }
+
         // タイムスタンプベースで経過時間を計算
         guard let startTime = phaseStartTime else {
             // 開始時刻が設定されていない場合は従来の方法にフォールバック
@@ -781,10 +1113,6 @@ public class PomodoroTimer: ObservableObject {
             return
         }
 
-        // 既存のaudioPlayerを適切に停止・解放
-        audioPlayer?.stop()
-        audioPlayer = nil
-
         // フェーズに応じて適切な音を選択
         // work完了時 → 終了音（completionSound）
         // 休憩完了時（work開始時） → 開始音（startSound）または終了音
@@ -796,6 +1124,20 @@ public class PomodoroTimer: ObservableObject {
             // work完了時または、別々の音を使わない場合
             targetSoundName = completionSound
         }
+
+        playSound(named: targetSoundName)
+    }
+
+    /// 時間割モードのチャイム。これから始まる区間で音を選ぶ
+    private func playBoundarySound(entering kind: TimetableSegmentKind) {
+        guard soundEnabled else { return }
+        playSound(named: (separateStartEndSounds && kind == .work) ? startSound : completionSound)
+    }
+
+    private func playSound(named targetSoundName: String) {
+        // 既存のaudioPlayerを適切に停止・解放
+        audioPlayer?.stop()
+        audioPlayer = nil
 
         let effectiveVolume = min(Float(soundVolume), 1.0)
         var soundPlayed = false
@@ -1032,7 +1374,7 @@ public class PomodoroTimer: ObservableObject {
 
             // 0.01ポモドーロ単位で計算
             let elapsedSeconds = Double(totalWorkSeconds)
-            let hundredthPomodoroSeconds = Double(workDuration) / 100.0
+            let hundredthPomodoroSeconds = Double(workSegmentSeconds) / 100.0
             let completedHundredths = floor(elapsedSeconds / hundredthPomodoroSeconds)
             return completedHundredths * 0.01
         } else {

@@ -919,13 +919,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌘⇧M Minimal  ⌘⇧T 🐇/🐢  ⌘⇧V View  ⌘⇧S Sort  ⌘⇧P Pin"
+            "value" : "⌘⇧M Minimal  ⌘⇧T 🐇/🐢  ⌘⇧K Timetable  ⌘⇧V View  ⌘⇧S Sort  ⌘⇧P Pin"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌘⇧M ミニマル  ⌘⇧T 🐇/🐢  ⌘⇧V ビュー  ⌘⇧S ソート  ⌘⇧P 最前面"
+            "value" : "⌘⇧M ミニマル  ⌘⇧T 🐇/🐢  ⌘⇧K 時間割  ⌘⇧V ビュー  ⌘⇧S ソート  ⌘⇧P 最前面"
           }
         }
       }
@@ -1539,7 +1539,263 @@
         }
       }
     },
-    "日本語" : {}
+    "日本語" : {},
+    "timetable.work %lld %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "P%1$lld · %2$lld/%3$lld focus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld限 · %2$lld/%3$lld 作業"
+          }
+        }
+      }
+    },
+    "timetable.break %lld %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "P%1$lld · %2$lld/%3$lld break"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld限 · %2$lld/%3$lld 休憩"
+          }
+        }
+      }
+    },
+    "timetable.recess %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recess · next P%1$lld at %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "休み時間 · 次は %1$lld限 %2$@"
+          }
+        }
+      }
+    },
+    "timetable.dayEnd" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Periods done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日の時限は終了"
+          }
+        }
+      }
+    },
+    "tooltip.timetable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timetable mode (⌘⇧K): phases follow the wall clock instead of when you press play.\nEach period is split into equal sessions — 🐢 coarse, 🐇 twice as fine (Short×2 = Long)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間割モード (⌘⇧K): 押した時刻ではなく絶対時刻でフェーズが決まります。\n1 時限を均等なセッションに分割 — 🐢 は粗く、🐇 はその倍細かく（Short×2 = Long）。"
+          }
+        }
+      }
+    },
+    "toast.timetableOn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timetable mode on"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間割モード ON"
+          }
+        }
+      }
+    },
+    "toast.timetableOff" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timetable mode off"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間割モード OFF"
+          }
+        }
+      }
+    },
+    "settings.timetable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timetable"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間割"
+          }
+        }
+      }
+    },
+    "settings.timetable.enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use timetable mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間割モードを使う"
+          }
+        }
+      }
+    },
+    "settings.timetable.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phases are decided by the clock, not by when you start."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始操作ではなく絶対時刻でフェーズが決まります。"
+          }
+        }
+      }
+    },
+    "settings.timetable.sessions %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sessions per period (🐢): %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 時限あたりのセッション数 (🐢): %lld"
+          }
+        }
+      }
+    },
+    "settings.timetable.ratio %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus : break = %lld : 1"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作業 : 休憩 = %lld : 1"
+          }
+        }
+      }
+    },
+    "settings.timetable.periods" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Periods — one or more HH:MM-HH:MM per line (24-hour)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時限 — 1 行に HH:MM-HH:MM（24 時間表記）"
+          }
+        }
+      }
+    },
+    "settings.timetable.invalidLines %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld line(s) could not be read"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 行を読み取れませんでした"
+          }
+        }
+      }
+    },
+    "settings.timetable.preview %lld %@ %@ %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lldmin → 🐢 %2$@+%3$@ · 🐇 %4$@+%5$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld分 → 🐢 %2$@+%3$@ ／ 🐇 %4$@+%5$@"
+          }
+        }
+      }
+    },
+    "settings.timetable.needsPeriods" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At least one period is required — the previous schedule is kept"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時限が 1 つも読めません — 前の時限表を保持します"
+          }
+        }
+      }
+    }
   },
   "version" : "1.0"
 }

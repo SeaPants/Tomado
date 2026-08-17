@@ -20,6 +20,7 @@ A minimalist Pomodoro timer with task management for macOS.
 ## Features
 
 - **Pomodoro Timer**: Work sessions, short breaks, and long breaks with customizable durations
+- **Timetable Mode**: Wall-clock Pomodoro — phases are decided by your class/period schedule, not by when you press play
 - **Task Management**: Simple task list with priority levels (!, !!, !!!)
 - **Task Notes**: Attach context to a task via indented bullets (`-` lines under a task)
 - **Subtasks**: Organize tasks hierarchically with drag & drop — drop onto a row to nest it, drop onto the line between rows (or below the list) to pull it back out
@@ -47,6 +48,7 @@ A minimalist Pomodoro timer with task management for macOS.
 | ⌘R | Reset cycle |
 | ⌘⇧M | Toggle minimal window mode |
 | ⌘⇧T | Toggle timer preset (🐇/🐢) |
+| ⌘⇧K | Toggle timetable mode |
 | ⌘⇧V | Toggle view mode |
 | ⌘⇧S | Sort by priority |
 | ⌘⇧P | Toggle topmost |
@@ -83,6 +85,38 @@ For cognitively demanding tasks requiring sustained attention, Ogut (2025) revie
 - González, V. M., & Mark, G. (2004). "Constant, constant, multi-tasking craziness": Managing multiple working spheres. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 113–120. https://doi.org/10.1145/985692.985707
 - Mark, G., González, V. M., & Harris, J. (2005). No task left behind? Examining the nature of fragmented work. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 321–330. https://doi.org/10.1145/1054972.1055017
 - Ogut, E. (2025). Assessing the efficacy of the Pomodoro technique in enhancing anatomy lesson retention during study sessions: A scoping review. *BMC Medical Education*, 25(1), 1440. https://doi.org/10.1186/s12909-025-08001-0
+
+## Timetable Mode (⌘⇧K)
+
+An ordinary Pomodoro starts when you press play. **Timetable mode inverts that**: you give Tomado your period schedule, and the wall clock decides the phase. Open the app at 14:12 and it already knows you are in the second session of period 3.
+
+Edit the schedule in Settings — one period per line, 24-hour time (several periods on one line are read too, so pasting works):
+
+```
+1  09:00-10:40
+2  10:50-12:30
+3  13:30-15:10
+4  15:20-17:00
+```
+
+Each period is divided into **equal sessions** (focus + break), so a period is exactly N cycles, breaks included. 🐢 uses the configured session count and 🐇 twice as many, which makes **🐇 × 2 = 🐢** exact in focus, break and cycle length. With the default 3 sessions and a 4:1 focus/break ratio, a 100-minute period gives:
+
+| | Focus | Break | Cycle | Per period |
+|---|---|---|---|---|
+| 🐢 | 26:40 | 6:40 | 33:20 | × 3 = 100 min |
+| 🐇 | 13:20 | 3:20 | 16:40 | × 6 = 100 min |
+
+Every 🐢 session starts where a 🐇 session starts, so switching granularity never drifts off the timetable — mid-session it can move you between focus and break.
+
+A period's last break runs straight into the recess: the 6:40 break at 10:33 continues until period 2 starts at 10:50, and lunch works the same way.
+
+Notes:
+
+- **Play/pause means "am I working on this task"** — it gates task time tracking. The countdown follows the clock either way, and the chime rings at every boundary.
+- **Skip is disabled** while the timetable runs: you cannot skip a wall clock.
+- **Outside the timetable** (before the first period, after the last) Tomado falls back to the normal 🐇/🐢 presets, so evenings work as before.
+- **Strict Break** leaves recesses longer than 20 minutes alone, so lunch stays yours.
+- The schedule applies **every day** — there is no weekday setting yet, so use ⌘⇧K to switch it off on days you are not on it.
 
 ## Import/Export Format
 
@@ -166,6 +200,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 ## 機能
 
 - **ポモドーロタイマー**: 作業・短い休憩・長い休憩のカスタマイズ可能なタイマー
+- **時間割モード**: 絶対時刻ベースのポモドーロ。押した時刻ではなく時限表がフェーズを決める
 - **タスク管理**: 優先度付き（!, !!, !!!）のシンプルなタスクリスト
 - **タスクメモ**: タスク配下のインデント `-` 行を文脈メモとして保持
 - **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理。行の上に落とすとサブタスク化、行間のラインやリスト下端に落とすとその階層に引き上げ
@@ -193,6 +228,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 | ⌘R | サイクルをリセット |
 | ⌘⇧M | ミニマルウィンドウ切替 |
 | ⌘⇧T | タイマープリセット切替 (🐇/🐢) |
+| ⌘⇧K | 時間割モード切替 |
 | ⌘⇧V | ビューモード切替 |
 | ⌘⇧S | 優先度順にソート |
 | ⌘⇧P | 最前面固定切替 |
@@ -229,6 +265,38 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 - González, V. M., & Mark, G. (2004). "Constant, constant, multi-tasking craziness": Managing multiple working spheres. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 113–120.
 - Mark, G., González, V. M., & Harris, J. (2005). No task left behind? Examining the nature of fragmented work. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems*, 321–330.
 - Ogut, E. (2025). Assessing the efficacy of the Pomodoro technique in enhancing anatomy lesson retention during study sessions: A scoping review. *BMC Medical Education*, 25(1), 1440.
+
+## 時間割モード (⌘⇧K)
+
+普通のポモドーロは「再生を押した時刻」が起点になります。**時間割モードはこれを反転させます**。時限表を渡しておけば、フェーズを決めるのは絶対時刻です。14:12 にアプリを開けば、すでに「3限の 2 セッション目」と表示されています。
+
+時限表は設定画面で 1 行 1 コマ・24 時間表記で編集します（1 行に複数コマ書いても読むので、貼り付けで 1 行になっても大丈夫です）：
+
+```
+1  09:00-10:40
+2  10:50-12:30
+3  13:30-15:10
+4  15:20-17:00
+```
+
+1 時限は**均等なセッション**（作業 + 休憩）に分割されるので、1 時限がちょうど N サイクル（休憩込み）になります。🐢 は設定したセッション数、🐇 はその倍を使うため、作業長・休憩長・サイクル長のいずれについても **🐇 × 2 = 🐢** が厳密に成り立ちます。既定の「1 時限 3 セッション・作業:休憩 = 4:1」なら、100 分の時限はこうなります：
+
+| | 作業 | 休憩 | 1 サイクル | 1 時限あたり |
+|---|---|---|---|---|
+| 🐢 | 26:40 | 6:40 | 33:20 | × 3 = 100 分 |
+| 🐇 | 13:20 | 3:20 | 16:40 | × 6 = 100 分 |
+
+🐢 のセッション開始は必ず 🐇 のセッション開始でもあるので、粒度を切り替えても時間割からずれません（セッションの途中で切り替えると作業↔休憩が入れ替わることはあります）。
+
+時限の最後の休憩はそのまま休み時間へつながります。10:33 に始まる 6:40 の休憩は 2 限が始まる 10:50 まで途切れず続き、昼休みも同じ扱いです。
+
+補足：
+
+- **再生/停止は「今このタスクに取り組んでいるか」** の意味になります。タスクの作業時間計測を制御するだけで、カウントダウンは常に壁時計に従い、区切りのチャイムも鳴ります。
+- 時間割が動いている間、**スキップは無効**です（壁時計は飛ばせません）。
+- **時間割の外**（始業前・終業後）では通常の 🐇/🐢 プリセットに戻るので、夜はこれまで通り使えます。
+- **厳格な休憩**は 20 分を超える休み時間には全画面ロックを掛けません。昼休みは自由です。
+- 時限表は**毎日**適用されます。曜日設定はまだないので、時間割のない日は ⌘⇧K で切ってください。
 
 ## インポート/エクスポート形式
 
