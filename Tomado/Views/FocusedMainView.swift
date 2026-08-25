@@ -238,6 +238,11 @@ struct FocusedMainView: View {
 
     // MARK: - Layouts
 
+    /// タイマー帯の高さ。タスクの有無・タイトルの行数で動かさないため定数で固定する。
+    /// 実測の内容高は 236pt（1 行タイトル）/ 238pt（2 行）/ 241pt（タスク 0 件）なので、
+    /// 一番高いものに数 pt の余裕を足した値。中身はこの枠の中で上下中央に置かれる
+    private static let timerBandHeight: CGFloat = 244
+
     private var standardLayout: some View {
         VStack(spacing: 0) {
             inputSection
@@ -246,11 +251,17 @@ struct FocusedMainView: View {
 
             Divider()
 
-            if let currentTask = taskListVM.currentTask {
-                currentTaskSection(currentTask)
-            } else {
-                emptyStateView
+            // タイマー帯は常に同じ高さ。伸縮させると最小高のときここが余白を食い尽くし、
+            // 追加欄が titlebar に潜りフッターが枠外へ落ちる。
+            // 伸びるのはタスク一覧だけにする
+            Group {
+                if let currentTask = taskListVM.currentTask {
+                    currentTaskSection(currentTask)
+                } else {
+                    emptyStateView
+                }
             }
+            .frame(height: Self.timerBandHeight)
 
             Divider()
 
@@ -366,8 +377,6 @@ struct FocusedMainView: View {
 
     private func currentTaskSection(_ task: TodoTask) -> some View {
         VStack(spacing: 10) {
-            Spacer()
-
             // タスク名 + 優先度
             HStack(spacing: 6) {
                 Text(task.priority.symbol)
@@ -377,7 +386,9 @@ struct FocusedMainView: View {
                     .font(.system(size: 16, weight: .medium))
             }
             .multilineTextAlignment(.center)
-            .lineLimit(2)
+            // 常に 2 行ぶん確保する。1 行タイトルと 2 行タイトルで帯の高さが変わると、
+            // タスクを切り替えるたびにタイマーと一覧の境目が跳ねる
+            .lineLimit(2, reservesSpace: true)
             .padding(.horizontal, 20)
 
             // タイマー
@@ -385,11 +396,9 @@ struct FocusedMainView: View {
 
             // コントロール
             controlButtons(task)
-
-            Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, 20)
     }
 
     private var timerDisplay: some View {
@@ -733,10 +742,6 @@ struct FocusedMainView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: 12) {
-            Spacer()
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 36))
-                .foregroundColor(.green.opacity(0.5))
             Text(String(localized: "empty.title"))
                 .font(.headline)
                 .foregroundColor(.secondary)
@@ -748,8 +753,6 @@ struct FocusedMainView: View {
             // タスクが無くてもタイマーは操作できる（休憩を最後まで走らせられる）
             timerDisplay
             taskFreeControlButtons
-
-            Spacer()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
@@ -854,7 +857,8 @@ struct FocusedMainView: View {
                     .padding(.vertical, 4)
                 }
             } else {
-                Color.clear.frame(height: 100)
+                // 固定高にすると最小高のときフッターを枠外へ押し出す。余白は伸縮させる
+                Color.clear
             }
         }
     }
@@ -902,7 +906,8 @@ struct FocusedMainView: View {
                     .padding(.vertical, 4)
                 }
             } else {
-                Color.clear.frame(height: 100)
+                // 固定高にすると最小高のときフッターを枠外へ押し出す。余白は伸縮させる
+                Color.clear
             }
         }
     }
@@ -1236,6 +1241,24 @@ struct FocusedMainView: View {
         }
     }
 
+    /// クリップボードから取り込んで結果をトーストで返す（メニューとショートカットで共有）
+    private func performImport() {
+        let result = taskListVM.importFromClipboard()
+        if result.added > 0 {
+            if sortState != .unsorted {
+                taskListVM.sort(ascending: sortState == .ascending)
+            }
+            showToast(
+                result.skipped > 0
+                    ? String(localized: "toast.importedWithSkipped \(result.added) \(result.skipped)")
+                    : String(localized: "toast.imported \(result.added)")
+            )
+        } else if result.skipped > 0 {
+            // 全部重複だったときに無反応だと「効いていない」ように見える
+            showToast(String(localized: "toast.importedAllDuplicates \(result.skipped)"))
+        }
+    }
+
     /// overflow メニュー: ピン留め・I/O・破壊系をまとめる
     private var moreMenuButton: some View {
         Menu {
@@ -1256,13 +1279,7 @@ struct FocusedMainView: View {
                 Label(String(localized: "menu.quickCapture"), systemImage: "square.and.pencil")
             }
             Button {
-                let count = taskListVM.importFromClipboard()
-                if count > 0 {
-                    if sortState != .unsorted {
-                        taskListVM.sort(ascending: sortState == .ascending)
-                    }
-                    showToast(String(localized: "toast.imported \(count)"))
-                }
+                performImport()
             } label: {
                 Label(String(localized: "menu.import"), systemImage: "square.and.arrow.down")
             }
@@ -1307,15 +1324,7 @@ struct FocusedMainView: View {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("") { showQuickCapture = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
-            Button("") {
-                let count = taskListVM.importFromClipboard()
-                if count > 0 {
-                    if sortState != .unsorted {
-                        taskListVM.sort(ascending: sortState == .ascending)
-                    }
-                    showToast(String(localized: "toast.imported \(count)"))
-                }
-            }
+            Button("") { performImport() }
             // ⌘V / ⌘C は OS の貼り付け・コピーに譲る（入力欄にペーストできなくなるため）
             .keyboardShortcut("v", modifiers: [.command, .option])
             Button("") {

@@ -568,9 +568,17 @@ public class TaskListViewModel: ObservableObject {
 
     // MARK: - Import/Export
 
+    /// インポート結果。skipped は重複とみなして捨てた件数
+    public struct ImportResult: Sendable {
+        public let added: Int
+        public let skipped: Int
+    }
+
     /// クリップボードからインポート（階層構造対応）
-    public func importFromClipboard() -> Int {
-        guard let text = NSPasteboard.general.string(forType: .string) else { return 0 }
+    public func importFromClipboard() -> ImportResult {
+        guard let text = NSPasteboard.general.string(forType: .string) else {
+            return ImportResult(added: 0, skipped: 0)
+        }
         let lines = text.components(separatedBy: .newlines)
 
         // 設定を取得
@@ -655,7 +663,7 @@ public class TaskListViewModel: ObservableObject {
             ))
         }
 
-        guard !parsed.isEmpty else { return 0 }
+        guard !parsed.isEmpty else { return ImportResult(added: 0, skipped: 0) }
 
         // 親子関係を構築しながらタスク + メモを実体化
         var parentStack: [(level: Int, id: String, actualIndent: Int)] = []
@@ -712,6 +720,14 @@ public class TaskListViewModel: ObservableObject {
             addedTasks[i].isCompleted = false
         }
 
+        // 同じ親の下で同名・同優先度の未完了タスクは同じものとみなして捨てる
+        let skipped = addedTasks.count
+        addedTasks = dropDuplicates(in: addedTasks)
+        let skippedCount = skipped - addedTasks.count
+        guard !addedTasks.isEmpty else {
+            return ImportResult(added: 0, skipped: skippedCount)
+        }
+
         // 表示順（親→子）でパースしたものを、保存フォーマットである実行順（子→親）に並べ替える
         let ordered = inExecutionOrder(addedTasks)
 
@@ -726,7 +742,48 @@ public class TaskListViewModel: ObservableObject {
         taskList.lastModified = Date()
         save()
 
-        return addedTasks.count
+        return ImportResult(added: addedTasks.count, skipped: skippedCount)
+    }
+
+    /// 重複判定のキー。「同じ親の下の、同じタイトル・同じ優先度」だけを同一視する
+    private struct SiblingKey: Hashable {
+        let parentId: String?
+        let title: String
+        let priority: Int
+    }
+
+    /// インポート分から重複を落とす。
+    /// - 既存リストとは未完了タスク同士だけを比べる（完了済みは再追加を邪魔しない）
+    /// - 親が違えば別物。インポート分のサブタスクは親 id が新規なので、
+    ///   突き合わせが成立するのはルート同士とバッチ内の兄弟同士だけになる
+    /// - 親を捨てるときはサブツリーごと捨てる（子だけ残すと親のいない迷子になる）
+    /// - `incoming` は親が子より先に並んでいる前提（パース順＝表示順）
+    private func dropDuplicates(in incoming: [TodoTask]) -> [TodoTask] {
+        var seen = Set(
+            taskList.tasks
+                .filter { !$0.isCompleted }
+                .map { SiblingKey(parentId: $0.parentId, title: $0.title, priority: $0.priority.rawValue) }
+        )
+        var droppedIds = Set<String>()
+        var kept: [TodoTask] = []
+
+        for task in incoming {
+            if let parentId = task.parentId, droppedIds.contains(parentId) {
+                droppedIds.insert(task.id)
+                continue
+            }
+            if !task.isCompleted {
+                let key = SiblingKey(
+                    parentId: task.parentId, title: task.title, priority: task.priority.rawValue
+                )
+                guard seen.insert(key).inserted else {
+                    droppedIds.insert(task.id)
+                    continue
+                }
+            }
+            kept.append(task)
+        }
+        return kept
     }
 
     /// 親→子の並びを、保存フォーマットである実行順（子孫 → 本人）へ変換する

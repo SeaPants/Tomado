@@ -1219,6 +1219,38 @@
         }
       }
     },
+    "toast.importedAllDuplicates %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All %lld tasks were duplicates"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件すべて重複でした"
+          }
+        }
+      }
+    },
+    "toast.importedWithSkipped %lld %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported %1$lld tasks (%2$lld duplicates skipped)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld件インポートしました（重複%2$lld件はスキップ）"
+          }
+        }
+      }
+    },
     "toast.minimalOff" : {
       "localizations" : {
         "en" : {
