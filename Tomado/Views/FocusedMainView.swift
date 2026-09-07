@@ -64,6 +64,8 @@ struct FocusedMainView: View {
     @State private var pendingCompleteTaskId: String?  // サブタスク確認待ちの親タスクID
     @State private var pendingCompleteSubtaskCount: Int = 0
     @State private var showCompleteWithSubtasksConfirm: Bool = false
+    @State private var inlineEdit: InlineEdit?  // 行内編集（名前変更 / サブタスク追加）
+    @State private var inlineText: String = ""
     @State private var pendingDeleteTaskId: String?  // サブタスクごと削除する確認待ちのタスクID
     @State private var pendingDeleteSubtaskCount: Int = 0
     @State private var showDeleteWithSubtasksConfirm: Bool = false
@@ -82,6 +84,13 @@ struct FocusedMainView: View {
     @AppStorage("deepFocusBreak") private var deepFocusBreak: Int = 10
     @AppStorage("deepFocusLongBreak") private var deepFocusLongBreak: Int = 30
     @FocusState private var isInputFocused: Bool
+    @FocusState private var isInlineFieldFocused: Bool
+
+    /// 行の中で完結する編集。名前変更とサブタスク追加で同じ入力欄を使う
+    enum InlineEdit: Equatable {
+        case rename(taskId: String)
+        case newSubtask(parentId: String)
+    }
 
     enum SortState: String {
         case unsorted  // 灰色
@@ -817,10 +826,13 @@ struct FocusedMainView: View {
             let completedTasks = taskListVM.taskList.tasks.filter { $0.isCompleted }
             let currentTaskId = taskListVM.currentTask?.id
             let ancestorIds = currentTaskId.map { taskListVM.getAncestorIds(for: $0) } ?? []
+            let subtaskAnchorId = newSubtaskAnchorId(in: hierarchyTasks)
 
             if !hierarchyTasks.isEmpty || !completedTasks.isEmpty {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    // LazyVStack は行の高さ推定と実測がぶつかると再レイアウトが収束せず、
+                    // 100% CPU で固まる。数十件のリストで遅延生成の利点はないので VStack にする
+                    VStack(spacing: 0) {
                         // 階層順でタスクを表示（親→子）
                         ForEach(Array(hierarchyTasks.enumerated()), id: \.element.id) { _, task in
                             let isCurrent = task.id == currentTaskId
@@ -835,6 +847,9 @@ struct FocusedMainView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
                                     .background(taskRowBackground(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex))
+
+                                // サブタスク追加の入力欄（対象サブツリーの末尾に出す）
+                                newSubtaskRow(after: task.id, anchorId: subtaskAnchorId)
                             }
                         }
 
@@ -869,10 +884,13 @@ struct FocusedMainView: View {
             let allTasksInHierarchy = taskListVM.allTasksInHierarchyOrder()
             let currentTaskId = taskListVM.currentTask?.id
             let ancestorIds = currentTaskId.map { taskListVM.getAncestorIds(for: $0) } ?? []
+            let subtaskAnchorId = newSubtaskAnchorId(in: allTasksInHierarchy)
 
             if !allTasksInHierarchy.isEmpty {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    // LazyVStack は行の高さ推定と実測がぶつかると再レイアウトが収束せず、
+                    // 100% CPU で固まる。数十件のリストで遅延生成の利点はないので VStack にする
+                    VStack(spacing: 0) {
                         ForEach(Array(allTasksInHierarchy.enumerated()), id: \.element.id) { _, task in
                             let isCurrent = task.id == currentTaskId
                             let ancestorIndex = ancestorIds.firstIndex(of: task.id)
@@ -895,6 +913,9 @@ struct FocusedMainView: View {
                                         .padding(.vertical, 6)
                                         .background(taskRowBackground(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex))
                                 }
+
+                                // サブタスク追加の入力欄（対象サブツリーの末尾に出す）
+                                newSubtaskRow(after: task.id, anchorId: subtaskAnchorId)
                             }
                         }
 
@@ -914,6 +935,16 @@ struct FocusedMainView: View {
 
     /// 階層ビュー用の完了タスク行（インデント維持、打ち消し線）
     private func hierarchyCompletedTaskRow(_ task: TodoTask) -> some View {
+        Group {
+            if isRenaming(task.id) {
+                inlineEditRow(indentLevel: task.indentLevel)
+            } else {
+                hierarchyCompletedTaskRowContent(task)
+            }
+        }
+    }
+
+    private func hierarchyCompletedTaskRowContent(_ task: TodoTask) -> some View {
         HStack(spacing: 4) {
             // インデント
             if task.indentLevel > 0 {
@@ -941,6 +972,8 @@ struct FocusedMainView: View {
             }
         }
         .contextMenu {
+            Button(String(localized: "button.rename")) { beginRename(task) }
+            Divider()
             Button(String(localized: "button.uncomplete")) {
                 taskListVM.uncompleteTask(id: task.id)
             }
@@ -955,10 +988,16 @@ struct FocusedMainView: View {
     /// そのままルートへ引き上がる（＝D&Dだけで階層を上げ下げできる）
     private func insertLine(before task: TodoTask) -> some View {
         let isTargeted = insertBeforeId == task.id
-        return Rectangle()
-            .fill(isTargeted ? Color.accentColor : Color.clear)
-            .frame(height: isTargeted ? 3 : 1)
-            .contentShape(Rectangle().size(width: .infinity, height: 12))  // タッチ領域は広めに
+        return Color.clear
+            .frame(height: Self.insertLineHeight)  // 高さは常に一定
+            .overlay {
+                // 見た目だけ差し替える。overlay は親のレイアウトを動かさないので、
+                // ドラッグ中に行が上下にずれて判定が発振することがない
+                Rectangle()
+                    .fill(isTargeted ? Color.accentColor : Color.clear)
+                    .frame(height: 3)
+            }
+            .contentShape(Rectangle().size(width: Self.dropHitWidth, height: 12))  // タッチ領域は広めに
             .dropDestination(for: String.self) { droppedIds, _ in
                 guard let droppedId = droppedIds.first, droppedId != task.id else { return false }
                 taskListVM.moveTask(droppedId, before: task.id, newParentId: task.parentId)
@@ -972,10 +1011,14 @@ struct FocusedMainView: View {
     /// リスト末尾のドロップゾーン（下端に落とす = ルート化して末尾へ）
     private func trailingDropZone() -> some View {
         let isTargeted = insertBeforeId == Self.trailingDropId
-        return Rectangle()
-            .fill(isTargeted ? Color.accentColor : Color.clear)
-            .frame(height: isTargeted ? 3 : 1)
-            .contentShape(Rectangle().size(width: .infinity, height: 28))
+        return Color.clear
+            .frame(height: Self.insertLineHeight)
+            .overlay {
+                Rectangle()
+                    .fill(isTargeted ? Color.accentColor : Color.clear)
+                    .frame(height: 3)
+            }
+            .contentShape(Rectangle().size(width: Self.dropHitWidth, height: 28))
             .dropDestination(for: String.self) { droppedIds, _ in
                 guard let droppedId = droppedIds.first else { return false }
                 taskListVM.moveTaskToEndAsRoot(droppedId)
@@ -988,6 +1031,13 @@ struct FocusedMainView: View {
 
     /// 末尾ドロップゾーンのハイライト用センチネル（実タスクIDと衝突しない）
     private static let trailingDropId = "__tomado.trailingDropZone__"
+
+    /// 挿入ラインが占める高さ。ドロップ対象になっても変えない（変えるとレイアウトが発振する）
+    private static let insertLineHeight: CGFloat = 2
+
+    /// ドロップ判定を横いっぱいに広げるための幅。
+    /// .infinity を入れるとヒットテストの矩形が無限大になり、レイアウト計算を壊すので有限値にする
+    private static let dropHitWidth: CGFloat = 10_000
 
     /// タスク行の背景色を決定
     private func taskRowBackground(_ task: TodoTask, isCurrent: Bool, ancestorIndex: Int?) -> Color {
@@ -1006,6 +1056,16 @@ struct FocusedMainView: View {
     }
 
     private func taskRow(_ task: TodoTask, isCurrent: Bool = false, ancestorIndex: Int? = nil) -> some View {
+        Group {
+            if isRenaming(task.id) {
+                inlineEditRow(indentLevel: task.indentLevel)
+            } else {
+                taskRowContent(task, isCurrent: isCurrent, ancestorIndex: ancestorIndex)
+            }
+        }
+    }
+
+    private func taskRowContent(_ task: TodoTask, isCurrent: Bool, ancestorIndex: Int?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 // プレイマーク（現在のタスク）
@@ -1103,6 +1163,9 @@ struct FocusedMainView: View {
             dropTargetId = isTargeted ? task.id : nil
         }
         .contextMenu {
+            Button(String(localized: "button.rename")) { beginRename(task) }
+            Button(String(localized: "button.addSubtask")) { beginNewSubtask(under: task) }
+            Divider()
             if !task.isRoot {
                 Button(String(localized: "button.makeIndependent")) {
                     taskListVM.makeRootTask(taskId: task.id)
@@ -1112,6 +1175,74 @@ struct FocusedMainView: View {
             }
             Button(String(localized: "button.delete"), role: .destructive) { requestDelete(taskId: task.id) }
         }
+    }
+
+    /// 名前変更・サブタスク追加で共用する行内の入力欄。
+    /// 行そのものを差し替えるので、元の行が持つタップ選択・ドラッグは編集中だけ外れる
+    /// （クリックが文字選択に使える）
+    private func inlineEditRow(indentLevel: Int, placeholder: String = "") -> some View {
+        HStack(spacing: 6) {
+            // 階層の位置を見失わないよう、インデントだけ元の行に揃える
+            if indentLevel > 0 {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: CGFloat(indentLevel * 14))
+            }
+
+            TextField(placeholder, text: $inlineText)
+                .textFieldStyle(.plain)
+                .font(indentLevel == 0 ? .body : .callout)
+                .focused($isInlineFieldFocused)
+                .onSubmit { commitInlineEdit() }
+                .onExitCommand { cancelInlineEdit() }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(NSColor.textBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor, lineWidth: 1)
+                )
+        }
+        .onAppear {
+            // 挿入直後の行にフォーカスは乗らないことがあるので、1 サイクル待ってから当てる
+            DispatchQueue.main.async { isInlineFieldFocused = true }
+        }
+        .onChange(of: isInlineFieldFocused) { _, focused in
+            // 他所をクリックしたら Finder と同じく確定して閉じる（打った文字を捨てない）
+            if !focused { commitInlineEdit() }
+        }
+    }
+
+    /// サブタスク追加中の入力欄を、対象タスクのサブツリー末尾（＝新しい子が並ぶ位置）に置く
+    @ViewBuilder
+    private func newSubtaskRow(after rowId: String, anchorId: String?) -> some View {
+        if case .newSubtask(let parentId)? = inlineEdit,
+           rowId == anchorId,
+           let parent = taskListVM.taskList.tasks.first(where: { $0.id == parentId }) {
+            inlineEditRow(
+                indentLevel: parent.indentLevel + 1,
+                placeholder: String(localized: "input.newSubtask")
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+    }
+
+    /// 入力欄を置く行 ID。表示順の配列で、対象タスクより深いインデントが続く間がサブツリー
+    private func newSubtaskAnchorId(in rows: [TodoTask]) -> String? {
+        guard case .newSubtask(let parentId)? = inlineEdit,
+              let start = rows.firstIndex(where: { $0.id == parentId }) else { return nil }
+        let baseLevel = rows[start].indentLevel
+        var last = start
+        var index = start + 1
+        while index < rows.count, rows[index].indentLevel > baseLevel {
+            last = index
+            index += 1
+        }
+        return rows[last].id
     }
 
     /// 優先度セレクタ（3つの独立ボタン）
@@ -1134,6 +1265,16 @@ struct FocusedMainView: View {
     }
 
     private func completedTaskRow(_ task: TodoTask) -> some View {
+        Group {
+            if isRenaming(task.id) {
+                inlineEditRow(indentLevel: task.indentLevel)
+            } else {
+                completedTaskRowContent(task)
+            }
+        }
+    }
+
+    private func completedTaskRowContent(_ task: TodoTask) -> some View {
         // 祖先のタイトルと完了状態を取得（ルートから順に）
         let ancestorInfo: [(title: String, isCompleted: Bool)] = {
             let ancestorIds = taskListVM.getAncestorIds(for: task.id) // 近い順
@@ -1193,6 +1334,8 @@ struct FocusedMainView: View {
             }
         }
         .contextMenu {
+            Button(String(localized: "button.rename")) { beginRename(task) }
+            Divider()
             Button(String(localized: "button.uncomplete")) {
                 taskListVM.uncompleteTask(id: task.id)
             }
@@ -1355,6 +1498,52 @@ struct FocusedMainView: View {
         }
     }
 
+    /// その行が名前変更中か
+    private func isRenaming(_ taskId: String) -> Bool {
+        if case .rename(let id)? = inlineEdit { return id == taskId }
+        return false
+    }
+
+    /// 名前変更を開始する（右クリック → 名前を変更）
+    private func beginRename(_ task: TodoTask) {
+        commitInlineEdit()  // 別の行を編集中なら、打ちかけの内容を捨てずに確定してから移る
+        inlineText = task.title
+        inlineEdit = .rename(taskId: task.id)
+    }
+
+    /// サブタスク追加を開始する（右クリック → サブタスクを追加）
+    private func beginNewSubtask(under task: TodoTask) {
+        commitInlineEdit()
+        inlineText = ""
+        inlineEdit = .newSubtask(parentId: task.id)
+    }
+
+    /// 入力を確定して編集を閉じ、フォーカスを追加欄へ返す
+    private func commitInlineEdit() {
+        guard let edit = inlineEdit else { return }
+        let text = inlineText
+        inlineEdit = nil  // フォーカス喪失経由の再入を先に断つ
+        inlineText = ""
+
+        switch edit {
+        case .rename(let taskId):
+            taskListVM.renameTask(id: taskId, title: text)
+        case .newSubtask(let parentId):
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                taskListVM.addTask(title: trimmed, parentId: parentId)
+                sortState = .unsorted
+            }
+        }
+        isInputFocused = true
+    }
+
+    private func cancelInlineEdit() {
+        inlineEdit = nil
+        inlineText = ""
+        isInputFocused = true
+    }
+
     /// 削除を要求する。サブタスクを巻き添えにする場合だけ確認を挟む
     private func requestDelete(taskId: String) {
         let subtaskCount = taskListVM.subtaskCount(for: taskId)
@@ -1483,6 +1672,7 @@ struct SettingsView: View {
     @State private var timetableSessions: Int
     @State private var timetableRatio: Int
     @State private var timetableText: String
+    @State private var newTaskPlacement: String
 
     /// 現在選択中のプリセット（保存時に、編集されたプリセットの時間をタイマーへ反映するのに使う）
     @AppStorage("timerPreset") private var timerPreset: FocusedMainView.TimerPreset = .shortFocus
@@ -1522,6 +1712,7 @@ struct SettingsView: View {
         _timetableSessions = State(initialValue: timer.timetableSessions)
         _timetableRatio = State(initialValue: Int(timer.timetableRatio.rounded()))
         _timetableText = State(initialValue: timer.timetable.text)
+        _newTaskPlacement = State(initialValue: defaults.string(forKey: "newTaskPlacement") ?? "top")
     }
 
     /// 下書きを現在値から取り直す。
@@ -1554,6 +1745,7 @@ struct SettingsView: View {
         timetableSessions = timer.timetableSessions
         timetableRatio = Int(timer.timetableRatio.rounded())
         timetableText = timer.timetable.text
+        newTaskPlacement = defaults.string(forKey: "newTaskPlacement") ?? "top"
 
         initialPresetMinutes = activePresetMinutes
     }
@@ -1719,6 +1911,18 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(String(localized: "settings.tasks")) {
+                    Picker(String(localized: "settings.tasks.placement"), selection: $newTaskPlacement) {
+                        Text(String(localized: "settings.tasks.placement.top")).tag("top")
+                        Text(String(localized: "settings.tasks.placement.bottom")).tag("bottom")
+                    }
+                    .pickerStyle(.segmented)
+                    Text(String(localized: "settings.tasks.placement.help"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Section {
                     Toggle(String(localized: "settings.import.allowList"), isOn: $importAllowListFormat)
                         .help(String(localized: "settings.import.allowList.help"))
@@ -1771,6 +1975,7 @@ struct SettingsView: View {
 
     private func save() {
         let defaults = UserDefaults.standard
+        defaults.set(newTaskPlacement, forKey: "newTaskPlacement")
         defaults.set(importAllowListFormat, forKey: "importAllowListFormat")
         defaults.set(indentStyle, forKey: "indentStyle")
         defaults.set(indentSpaces, forKey: "indentSpaces")

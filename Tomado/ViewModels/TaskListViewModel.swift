@@ -84,11 +84,27 @@ public class TaskListViewModel: ObservableObject {
         save()
     }
 
+    /// 新規タスクを同じ優先度の中のどこに置くか（設定で切り替え、既定は先頭）
+    public enum NewTaskPlacement: String {
+        case top     // 同じ優先度の先頭（＝すぐ着手する想定）
+        case bottom  // 同じ優先度の末尾（＝溜めていく想定）
+
+        public static var current: NewTaskPlacement {
+            UserDefaults.standard.string(forKey: "newTaskPlacement")
+                .flatMap(NewTaskPlacement.init(rawValue:)) ?? .top
+        }
+    }
+
     /// 優先度に基づいて挿入位置を決定（ルートタスクのみ対象）
     /// 挿入先は対象ルートの「サブツリー先頭」なので、他タスクのサブツリー内部には入り込まない
     private func findInsertIndex(for priority: Priority) -> Int {
+        let placement = NewTaskPlacement.current
         for task in taskList.tasks where !task.isCompleted && task.isRoot {
-            if task.priority.rawValue < priority.rawValue {
+            // top: 同じ優先度の先頭に割り込む / bottom: 同じ優先度を通り過ぎて末尾に付ける
+            let reached = placement == .top
+                ? task.priority.rawValue <= priority.rawValue
+                : task.priority.rawValue < priority.rawValue
+            if reached {
                 return subtreeStartIndex(of: task.id) ?? taskList.tasks.count
             }
         }
@@ -398,12 +414,15 @@ public class TaskListViewModel: ObservableObject {
     }
 
     /// 指定タスクの祖先IDリストを取得（直近の親から順に）
+    /// （描画のたびに呼ばれるので、データが循環していても必ず止まるようにする）
     public func getAncestorIds(for taskId: String) -> [String] {
         var ancestors: [String] = []
+        var visited: Set<String> = [taskId]
         var currentId = taskId
 
         while let task = taskList.tasks.first(where: { $0.id == currentId }),
-              let parentId = task.parentId {
+              let parentId = task.parentId,
+              visited.insert(parentId).inserted {
             ancestors.append(parentId)
             currentId = parentId
         }
@@ -969,6 +988,17 @@ public class TaskListViewModel: ObservableObject {
         let task = TodoTask(title: trimmed, priority: .low)
         // 未完了タスクの末尾、完了タスクの直前に挿入
         taskList.tasks.insert(task, at: endOfIncompleteIndex())
+        taskList.lastModified = Date()
+        save()
+    }
+
+    /// タスク名を変更して保存する。空文字は「消したい」ではなく入力ミスとみなし、元の名前を残す
+    public func renameTask(id: String, title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = taskList.tasks.firstIndex(where: { $0.id == id }),
+              taskList.tasks[index].title != trimmed else { return }
+        taskList.tasks[index].title = trimmed
         taskList.lastModified = Date()
         save()
     }

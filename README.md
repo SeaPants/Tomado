@@ -21,8 +21,9 @@ A minimalist Pomodoro timer with task management for macOS.
 
 - **Pomodoro Timer**: Work sessions, short breaks, and long breaks with customizable durations
 - **Timetable Mode**: Wall-clock Pomodoro — phases are decided by your class/period schedule, not by when you press play
-- **Task Management**: Simple task list with priority levels (!, !!, !!!)
+- **Task Management**: Simple task list with priority levels (!, !!, !!!); new tasks land at the top of their priority group (switchable to the bottom in Settings)
 - **Task Notes**: Attach context to a task via indented bullets (`-` lines under a task)
+- **Right-Click Menu**: Rename a task or add a subtask right in the row (Enter to save, Esc to cancel)
 - **Subtasks**: Organize tasks hierarchically with drag & drop — drop onto a row to nest it, drop onto the line between rows (or below the list) to pull it back out
 - **Auto-cascade**: Confirmation modal when completing a parent with incomplete subtasks; auto-completes parent when all subtasks done; auto-advances to next task on completion
 - **View Modes**: Toggle between separated view and hierarchy view

@@ -256,6 +256,134 @@
         }
       }
     },
+    "button.addSubtask" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Subtask"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブタスクを追加"
+          }
+        }
+      }
+    },
+    "input.newSubtask" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New subtask"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブタスク名"
+          }
+        }
+      }
+    },
+    "settings.tasks" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tasks"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスク"
+          }
+        }
+      }
+    },
+    "settings.tasks.placement" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New task position"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規タスクの位置"
+          }
+        }
+      }
+    },
+    "settings.tasks.placement.top" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じ優先度の先頭"
+          }
+        }
+      }
+    },
+    "settings.tasks.placement.bottom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じ優先度の末尾"
+          }
+        }
+      }
+    },
+    "settings.tasks.placement.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where a task added from the input field lands within its priority group."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "入力欄から追加したタスクを、同じ優先度の中のどこに置くか。"
+          }
+        }
+      }
+    },
+    "button.rename" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前を変更"
+          }
+        }
+      }
+    },
     "quickCapture.title" : {
       "localizations" : {
         "en" : {
