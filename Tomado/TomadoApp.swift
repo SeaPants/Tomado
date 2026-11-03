@@ -174,6 +174,8 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
         NSApp.activate(ignoringOtherApps: true)
 
         self.mainWindow = win
+        // 復元したフレームは前回の状態（パネル込みかどうか）のまま
+        windowIncludesPlanner = isPlannerVisible
     }
 
     // MARK: - Day Planner Panel
@@ -187,9 +189,14 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
         NSSize(width: 320 + (plannerVisible ? DayPlannerPanel.width + 1 : 0), height: 480)
     }
 
+    /// ウィンドウの幅に、いま計画パネルのぶんが含まれているか。
+    /// 伸び縮みを「今の幅 ± パネル幅」で決めると、同じ指示が重なったときに幅がずれていくので、これで二重適用を防ぐ
+    private var windowIncludesPlanner = false
+
     /// 計画パネルの開閉に合わせてウィンドウを右へ広げる／縮める（一覧側の幅は変えない）
     func applyPlannerWidth(visible: Bool) {
-        guard let win = mainWindow else { return }
+        guard let win = mainWindow, visible != windowIncludesPlanner else { return }
+        windowIncludesPlanner = visible
         let delta = (DayPlannerPanel.width + 1) * (visible ? 1 : -1)
         let minSize = Self.mainContentMinSize(plannerVisible: visible)
         var frame = win.frame

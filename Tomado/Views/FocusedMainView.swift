@@ -82,6 +82,14 @@ struct FocusedMainView: View {
     @AppStorage("timerPreset") private var timerPreset: TimerPreset = .shortFocus  // タイマープリセット
     @AppStorage("strictBreakMode") private var strictBreakMode: Bool = false  // 厳格な休憩モード
     @AppStorage("plannerVisible") private var plannerVisible: Bool = false  // 今日の計画パネル
+    /// ウィンドウの最小幅にパネルのぶんを含めるか。開閉のアニメーション中は外しておく（togglePlanner 参照）
+    @State private var reservesPlannerWidth: Bool = false
+    /// 開閉の途中（予約した伸び縮みが済むまで）。この間の ⌘⇧D は受け付けない。
+    /// 受け付けると、開く側と閉じる側の後処理が入れ違い、閉じているのにパネル込みの最小幅が残る
+    @State private var isPlannerTransitioning: Bool = false
+    /// 開閉の間だけ本体の幅を固定する。固定しないと、差し込んだ直後のパネルに幅を先に配るため、
+    /// ウィンドウが伸びる前に本体が一瞬最小幅まで押し縮められる
+    @State private var frozenMainWidth: CGFloat?
     @State private var breakLockSuppressedUntil: Date?  // 長押しスキップでロックを見送る区間の終わり
     @StateObject private var breakLockController = BreakLockWindowController()
     // タイマープリセット設定（カスタマイズ可能）
@@ -126,15 +134,19 @@ struct FocusedMainView: View {
     var body: some View {
         HStack(spacing: 0) {
             standardLayout
-                .frame(minWidth: 320, maxWidth: .infinity)
+                .frame(minWidth: frozenMainWidth ?? 320, maxWidth: frozenMainWidth ?? .infinity)
             if plannerVisible {
                 DayPlannerPanel(planner: planner, taskListVM: taskListVM, onClose: togglePlanner)
             }
         }
+        // ウィンドウの最小サイズはこの制約で決まる（Auto Layout の中身を持つウィンドウでは contentMinSize は効かない）。
+        // パネル自身は最小幅 0 なので、開いている間はここでパネルのぶんを足す
+        .frame(minWidth: 320 + (reservesPlannerWidth ? DayPlannerPanel.width + 1 : 0))
         .frame(minHeight: 480, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .animation(.easeInOut(duration: 0.25), value: timer.currentPhase)
         .onAppear {
+            reservesPlannerWidth = plannerVisible
             isInputFocused = true
             updateTimerTask()
             applyWindowLevel()
@@ -787,18 +799,34 @@ struct FocusedMainView: View {
         .help(String(localized: "planner.toggle"))
     }
 
-    /// パネルは「右に引き出す」ように見せたいので、開くときと閉じるときで順番を変える
+    /// パネルは「右に引き出す」ように見せたいので、開くときと閉じるときで順番を変える。
+    /// 最小幅（reservesPlannerWidth）も、伸び縮みの邪魔をしない側で切り替える
     private func togglePlanner() {
+        guard !isPlannerTransitioning else { return }
+        isPlannerTransitioning = true
+        let contentWidth = TomadoAppDelegate.shared?.mainWindow?.contentLayoutRect.width
         if plannerVisible {
-            // 閉じる: 先にウィンドウを縮めてパネルを引っ込め、縮みきってから取り除く
-            TomadoAppDelegate.shared?.applyPlannerWidth(visible: false)
-            plannerVisible = false
+            // 閉じる: 先に最小幅からパネルのぶんを外し、それが反映されてから縮めてパネルを取り除く。
+            // 外す前に縮めると、パネル込みの最小幅に引っかかって縮みきらない
+            reservesPlannerWidth = false
+            frozenMainWidth = contentWidth.map { max(320, $0 - DayPlannerPanel.width - 1) }
+            DispatchQueue.main.async {
+                TomadoAppDelegate.shared?.applyPlannerWidth(visible: false)
+                plannerVisible = false
+                frozenMainWidth = nil
+                isPlannerTransitioning = false
+            }
         } else {
             // 開く: 幅 0 のパネルを先に差し込み、ウィンドウが伸びたぶんだけ右から現れるようにする。
-            // 先に伸ばすと、パネルが入るまでの間は本体が横に引き伸ばされてしまう
+            // 先に伸ばすと、パネルが入るまでの間は本体が横に引き伸ばされてしまう。
+            // 伸びきってから最小幅にパネルのぶんを足す（開いたまま畳めないように）
+            frozenMainWidth = contentWidth
             plannerVisible = true
             DispatchQueue.main.async {
                 TomadoAppDelegate.shared?.applyPlannerWidth(visible: true)
+                reservesPlannerWidth = true
+                frozenMainWidth = nil
+                isPlannerTransitioning = false
             }
         }
     }
