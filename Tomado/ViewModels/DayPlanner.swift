@@ -54,7 +54,7 @@ public final class DayPlanner: ObservableObject {
         var calendarIds: [String]?
         var icsURLs: [String] = []
 
-        static func current() -> CalendarSettings {
+        @MainActor static func current() -> CalendarSettings {
             let defaults = UserDefaults.standard
             return CalendarSettings(
                 macEnabled: defaults.bool(forKey: DayPlanner.calendarEnabledKey),
