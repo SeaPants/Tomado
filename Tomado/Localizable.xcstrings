@@ -2,6 +2,86 @@
   "sourceLanguage" : "en",
   "strings" : {
     "" : {},
+    "alert.uncompleteWithSubtasks.message %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This task has %lld completed subtask(s)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスクには完了済みのサブタスクが %lld 個あります。"
+          }
+        }
+      }
+    },
+    "alert.uncompleteWithSubtasks.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore subtasks too?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブタスクも未完了に戻しますか？"
+          }
+        }
+      }
+    },
+    "button.duplicate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicate"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製"
+          }
+        }
+      }
+    },
+    "button.uncompleteAll" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore All"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて戻す"
+          }
+        }
+      }
+    },
+    "button.uncompleteOnlyThis" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only This Task"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタスクだけ"
+          }
+        }
+      }
+    },
     "planner.empty" : {
       "localizations" : {
         "en" : {
@@ -270,6 +350,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "表示の開始"
+          }
+        }
+      }
+    },
+    "toast.duplicated" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicated"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製しました"
           }
         }
       }

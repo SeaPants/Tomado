@@ -73,6 +73,9 @@ struct FocusedMainView: View {
     @State private var pendingDeleteTaskId: String?  // サブタスクごと削除する確認待ちのタスクID
     @State private var pendingDeleteSubtaskCount: Int = 0
     @State private var showDeleteWithSubtasksConfirm: Bool = false
+    @State private var pendingUncompleteTaskId: String?  // サブタスクも戻すか確認待ちのタスクID
+    @State private var pendingUncompleteSubtaskCount: Int = 0
+    @State private var showUncompleteWithSubtasksConfirm: Bool = false
     @AppStorage("sortState") private var sortState: SortState = .unsorted  // ソート状態
     @AppStorage("isTopmost") private var isTopmost: Bool = false  // 最前面固定
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
@@ -241,6 +244,29 @@ struct FocusedMainView: View {
             }
         } message: {
             Text(String(localized: "alert.deleteWithSubtasks.message \(pendingDeleteSubtaskCount)"))
+        }
+        .alert(
+            String(localized: "alert.uncompleteWithSubtasks.title"),
+            isPresented: $showUncompleteWithSubtasksConfirm
+        ) {
+            Button(String(localized: "button.uncompleteAll")) {
+                if let id = pendingUncompleteTaskId {
+                    taskListVM.uncompleteTask(id: id, includingSubtasks: true)
+                }
+                pendingUncompleteTaskId = nil
+            }
+            .keyboardShortcut(.defaultAction)
+            Button(String(localized: "button.uncompleteOnlyThis")) {
+                if let id = pendingUncompleteTaskId {
+                    taskListVM.uncompleteTask(id: id, includingSubtasks: false)
+                }
+                pendingUncompleteTaskId = nil
+            }
+            Button(String(localized: "button.cancel"), role: .cancel) {
+                pendingUncompleteTaskId = nil
+            }
+        } message: {
+            Text(String(localized: "alert.uncompleteWithSubtasks.message \(pendingUncompleteSubtaskCount)"))
         }
         .overlay(alignment: .top) {
             if let message = toastMessage {
@@ -1028,9 +1054,8 @@ struct FocusedMainView: View {
         .contextMenu {
             Button(String(localized: "button.rename")) { beginRename(task) }
             Divider()
-            Button(String(localized: "button.uncomplete")) {
-                taskListVM.uncompleteTask(id: task.id)
-            }
+            Button(String(localized: "button.uncomplete")) { requestUncomplete(task) }
+            duplicateMenuItem(for: task)
             Button(String(localized: "button.delete"), role: .destructive) {
                 requestDelete(taskId: task.id)
             }
@@ -1221,6 +1246,7 @@ struct FocusedMainView: View {
         .contextMenu {
             Button(String(localized: "button.rename")) { beginRename(task) }
             Button(String(localized: "button.addSubtask")) { beginNewSubtask(under: task) }
+            duplicateMenuItem(for: task)
             Divider()
             if !task.isRoot {
                 Button(String(localized: "button.makeIndependent")) {
@@ -1392,9 +1418,8 @@ struct FocusedMainView: View {
         .contextMenu {
             Button(String(localized: "button.rename")) { beginRename(task) }
             Divider()
-            Button(String(localized: "button.uncomplete")) {
-                taskListVM.uncompleteTask(id: task.id)
-            }
+            Button(String(localized: "button.uncomplete")) { requestUncomplete(task) }
+            duplicateMenuItem(for: task)
             Button(String(localized: "button.delete"), role: .destructive) {
                 requestDelete(taskId: task.id)
             }
@@ -1605,6 +1630,26 @@ struct FocusedMainView: View {
     }
 
     /// 削除を要求する。サブタスクを巻き添えにする場合だけ確認を挟む
+    /// 未完了に戻す。完了済みのサブタスクがあれば、それも戻すか尋ねる
+    private func requestUncomplete(_ task: TodoTask) {
+        let count = taskListVM.completedSubtaskCount(for: task.id)
+        guard count > 0 else {
+            taskListVM.uncompleteTask(id: task.id)
+            return
+        }
+        pendingUncompleteTaskId = task.id
+        pendingUncompleteSubtaskCount = count
+        showUncompleteWithSubtasksConfirm = true
+    }
+
+    /// 右クリックメニューの「複製」（サブタスクがあれば一緒に複製される）
+    private func duplicateMenuItem(for task: TodoTask) -> some View {
+        Button(String(localized: "button.duplicate")) {
+            taskListVM.duplicateTask(id: task.id)
+            showToast(String(localized: "toast.duplicated"))
+        }
+    }
+
     private func requestDelete(taskId: String) {
         let subtaskCount = taskListVM.subtaskCount(for: taskId)
         if subtaskCount > 0 {

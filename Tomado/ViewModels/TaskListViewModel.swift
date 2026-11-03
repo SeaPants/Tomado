@@ -12,6 +12,10 @@ public class TaskListViewModel: ObservableObject {
     /// ソート前の手動順序スナップショット（ソート状態を解除したときに復元する）
     private static let manualOrderKey = "manualTaskOrder"
 
+    /// 完了したときに「すぐ後ろにあったタスク」。未完了に戻すとき、元の位置へ戻すための目印
+    /// （アプリを閉じると忘れる。そのときは親の末子か優先度の並びの中へ戻す）
+    private var restoreAnchors: [String: String] = [:]
+
     /// タイマーから届く端数ポモドーロを蓄積し、1.0 を超えたら実績に繰り上げる
     private var fractionalPomodoros: [String: Double] = [:]
 
@@ -181,6 +185,10 @@ public class TaskListViewModel: ObservableObject {
 
         // 完了タスクを末尾に移動
         let completedIds = Set([id] + subtaskIds)
+        if let index = updatedTasks.firstIndex(where: { $0.id == id }),
+           let next = updatedTasks[(index + 1)...].first(where: { !completedIds.contains($0.id) && !$0.isCompleted }) {
+            restoreAnchors[id] = next.id
+        }
         let completedTasks = updatedTasks.filter { completedIds.contains($0.id) }
         updatedTasks.removeAll { completedIds.contains($0.id) }
         updatedTasks.append(contentsOf: completedTasks)
@@ -195,28 +203,108 @@ public class TaskListViewModel: ObservableObject {
         save()
     }
 
-    /// タスクを未完了に戻す（親タスクも一緒に未完了にする）
-    public func uncompleteTask(id: String) {
-        var updatedTasks = taskList.tasks
+    /// 完了済みのサブタスク（孫以下も含む）の数。親を未完了に戻すとき、子も戻すか尋ねるのに使う
+    public func completedSubtaskCount(for taskId: String) -> Int {
+        let subtaskIds = Set(getSubtaskIds(for: taskId))
+        return taskList.tasks.filter { subtaskIds.contains($0.id) && $0.isCompleted }.count
+    }
 
-        // 対象タスクと全ての祖先を未完了に
-        let ancestorIds = getAncestorIds(for: id)
-        let idsToUncomplete = Set([id] + ancestorIds)
+    /// タスクを未完了に戻す。完了済みの祖先も一緒に戻す（未完了の子が完了済みの親にぶら下がらないように）
+    /// 戻したタスクは、親が未完了ならその親の末子として、ルートなら優先度の並びの中に置き直す。
+    /// 未完了リストの末尾に付けると、元の位置からも優先度の並びからも外れてしまう
+    /// - Parameter includingSubtasks: 完了済みのサブタスクも一緒に戻すか
+    public func uncompleteTask(id: String, includingSubtasks: Bool = false) {
+        guard taskList.tasks.contains(where: { $0.id == id }) else { return }
 
-        for taskId in idsToUncomplete {
-            if let index = updatedTasks.firstIndex(where: { $0.id == taskId }) {
-                updatedTasks[index].isCompleted = false
-            }
+        // 戻すのは完了済みの祖先だけ。未完了の祖先まで動かすと、そのプロジェクトごと位置が変わる
+        let isCompleted: (String) -> Bool = { taskId in
+            self.taskList.tasks.first(where: { $0.id == taskId })?.isCompleted ?? false
+        }
+        let restoredAncestors = Array(getAncestorIds(for: id).prefix(while: isCompleted))
+        let top = restoredAncestors.last ?? id
+        var ids = Set([id] + restoredAncestors)
+        if includingSubtasks {
+            ids.formUnion(getSubtaskIds(for: id))
         }
 
-        // 未完了に戻したタスクを未完了リストの末尾に移動
-        let uncompletedTasks = updatedTasks.filter { idsToUncomplete.contains($0.id) }
-        updatedTasks.removeAll { idsToUncomplete.contains($0.id) }
-        let insertIndex = updatedTasks.lastIndex(where: { !$0.isCompleted }).map { $0 + 1 } ?? 0
-        updatedTasks.insert(contentsOf: uncompletedTasks, at: insertIndex)
+        // 一番上で戻したタスクのサブツリーのうち、戻すものだけを実行順のまま一塊で運ぶ
+        let block = subtreeInExecutionOrder(top)
+            .filter { ids.contains($0.id) }
+            .map { task -> TodoTask in
+                var restored = task
+                restored.isCompleted = false
+                return restored
+            }
+        taskList.tasks.removeAll { ids.contains($0.id) }
 
-        taskList = TaskList(tasks: updatedTasks, lastModified: Date())
+        // 実行順ではサブツリーの最後が top 本人。その親は未完了（完了済みなら一緒に戻している）
+        let parentId = block.last?.parentId
+        let insertAt = restoreAnchors.removeValue(forKey: top).flatMap { restoreIndex(anchor: $0, parentId: parentId) }
+            ?? parentId.flatMap { pid in taskList.tasks.firstIndex { $0.id == pid } }
+            ?? findInsertIndex(for: block.last?.priority ?? .medium)
+        taskList.tasks.insert(contentsOf: block, at: min(insertAt, taskList.tasks.count))
+
+        taskList.lastModified = Date()
         save()
+    }
+
+    /// 完了前に後ろにあったタスク（anchor）を手がかりに、同じ親の下の元の位置を求める
+    /// anchor がまだ同じ親の下（あるいは親そのもの）に居るときだけ使う。動いていたら nil
+    private func restoreIndex(anchor: String, parentId: String?) -> Int? {
+        guard let anchorTask = taskList.tasks.first(where: { $0.id == anchor }), !anchorTask.isCompleted else {
+            return nil
+        }
+        if anchor == parentId {
+            return taskList.tasks.firstIndex { $0.id == anchor }  // 末子だった
+        }
+        // anchor かその祖先のうち、戻すタスクの兄弟にあたるもの。そのサブツリーの手前に入れる
+        let sibling = ([anchor] + getAncestorIds(for: anchor)).first { candidate in
+            taskList.tasks.first(where: { $0.id == candidate })?.parentId == parentId
+        }
+        return sibling.flatMap { subtreeStartIndex(of: $0) }
+    }
+
+    /// タスクをサブタスク（孫以下も含む）ごと複製する。複製は未完了・実績 0 で、元のすぐ後ろ（同じ親の下）に置く
+    /// 親だけ複製しても中身のない殻になるので、サブタスクは常に一緒に複製する
+    /// - Returns: 複製したタスクの ID
+    @discardableResult
+    public func duplicateTask(id: String) -> String? {
+        guard let original = taskList.tasks.first(where: { $0.id == id }) else { return nil }
+
+        // 親が完了済み（または居ない）なら、複製はルートにする（未完了の子を完了済みの親に付けない）
+        let parent = original.parentId.flatMap { pid in
+            taskList.tasks.first { $0.id == pid && !$0.isCompleted }
+        }
+        let baseIndent = parent.map { $0.indentLevel + 1 } ?? 0
+        let source = subtreeInExecutionOrder(id)
+
+        var newIds: [String: String] = [:]
+        for task in source { newIds[task.id] = UUID().uuidString }
+        let copies = source.map { task in
+            TodoTask(
+                id: newIds[task.id]!,
+                title: task.title,
+                priority: task.priority,
+                pomodoros: 0,
+                parentId: task.id == id ? parent?.id : task.parentId.flatMap { newIds[$0] },
+                indentLevel: baseIndent + (task.indentLevel - original.indentLevel),
+                notes: task.notes)
+        }
+
+        // 元が未完了ならその直後（＝実行順で次）。完了済みなら、親の末子か優先度の並びの中へ
+        let insertAt: Int
+        if !original.isCompleted, let index = taskList.tasks.firstIndex(where: { $0.id == id }) {
+            insertAt = index + 1
+        } else if let parent, let index = taskList.tasks.firstIndex(where: { $0.id == parent.id }) {
+            insertAt = index
+        } else {
+            insertAt = findInsertIndex(for: original.priority)
+        }
+        taskList.tasks.insert(contentsOf: copies, at: min(insertAt, taskList.tasks.count))
+
+        taskList.lastModified = Date()
+        save()
+        return newIds[id]
     }
 
     /// 指定タスクのサブタスクIDを再帰的に取得

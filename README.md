@@ -23,7 +23,8 @@ A minimalist Pomodoro timer with task management for macOS.
 - **Timetable Mode**: Wall-clock Pomodoro — phases are decided by your class/period schedule, not by when you press play
 - **Task Management**: Simple task list with priority levels (!, !!, !!!); new tasks land at the top of their priority group (switchable to the bottom in Settings)
 - **Task Notes**: Attach context to a task via indented bullets (`-` lines under a task)
-- **Right-Click Menu**: Rename a task or add a subtask right in the row (Enter to save, Esc to cancel)
+- **Right-Click Menu**: Rename a task or add a subtask right in the row (Enter to save, Esc to cancel), or duplicate it along with its subtasks
+- **Uncomplete**: A task you mark incomplete again goes back where it was, and Tomado asks whether its completed subtasks should come back too
 - **Subtasks**: Organize tasks hierarchically with drag & drop — drop onto a row to nest it, drop onto the line between rows (or below the list) to pull it back out
 - **Auto-cascade**: Confirmation modal when completing a parent with incomplete subtasks; when the last subtask is done, focus returns to the parent so you decide when it is finished; otherwise auto-advances to the next task
 - **View Modes**: Toggle between separated view and hierarchy view
@@ -208,6 +209,8 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 - **時間割モード**: 絶対時刻ベースのポモドーロ。押した時刻ではなく時限表がフェーズを決める
 - **タスク管理**: 優先度付き（!, !!, !!!）のシンプルなタスクリスト
 - **タスクメモ**: タスク配下のインデント `-` 行を文脈メモとして保持
+- **右クリックメニュー**: 行の中で名前変更・サブタスク追加（Enter で確定、Esc で取消）。タスクの複製（サブタスクも一緒に）
+- **未完了に戻す**: 元の位置に戻る。完了済みのサブタスクがあれば、それも戻すか確認
 - **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理。行の上に落とすとサブタスク化、行間のラインやリスト下端に落とすとその階層に引き上げ
 - **自動カスケード**: 親タスク完了時に未完了サブタスクがあれば確認モーダル。最後のサブタスクを終えると親へ戻る（親の完了は自分で ⌘D）。それ以外は次の未完了タスクへ自動遷移
 - **ビューモード**: 分離ビューと階層ビューを切り替え
