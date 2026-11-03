@@ -2,6 +2,294 @@
   "sourceLanguage" : "en",
   "strings" : {
     "" : {},
+    "planner.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag tasks here\nto plan your day"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タスクをここにドラッグして\n今日の計画を立てる"
+          }
+        }
+      }
+    },
+    "planner.remove" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from plan"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計画から外す"
+          }
+        }
+      }
+    },
+    "planner.startNow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Work on this now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今これをやる"
+          }
+        }
+      }
+    },
+    "planner.suggestion %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up next: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次は「%@」"
+          }
+        }
+      }
+    },
+    "planner.summary %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Worked %1$@ · Planned %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作業 %1$@ · 計画 %2$@"
+          }
+        }
+      }
+    },
+    "planner.switch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch ⌘J"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切り替え ⌘J"
+          }
+        }
+      }
+    },
+    "planner.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日"
+          }
+        }
+      }
+    },
+    "planner.toggle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day plan (⌘⇧D)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の計画 (⌘⇧D)"
+          }
+        }
+      }
+    },
+    "settings.planner" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day Plan"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日の計画"
+          }
+        }
+      }
+    },
+    "settings.planner.calendar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Mac Calendar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac のカレンダーを使う"
+          }
+        }
+      }
+    },
+    "settings.planner.calendar.denied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendar access is off. Allow Tomado in System Settings → Privacy & Security → Calendars."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カレンダーへのアクセスが許可されていません。システム設定 → プライバシーとセキュリティ → カレンダー で Tomado を許可してください。"
+          }
+        }
+      }
+    },
+    "settings.planner.calendar.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timed events fill their slots so tasks can't be planned there. All-day and \"free\" events are ignored. ics URLs (e.g. Google Calendar's secret address) are refreshed every 15 minutes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間指定の予定でマスを埋め、そこには計画を置けなくします。終日の予定と「空き時間」の予定は対象外です。ics の URL（Google カレンダーの「iCal 形式の非公開アドレス」など）は 15 分ごとに読み直します。"
+          }
+        }
+      }
+    },
+    "settings.planner.calendar.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busy Time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "予定で埋める"
+          }
+        }
+      }
+    },
+    "settings.planner.end" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day ends at"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示の終了"
+          }
+        }
+      }
+    },
+    "settings.planner.ics.add" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加"
+          }
+        }
+      }
+    },
+    "settings.planner.ics.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add an ics URL (https:// or webcal://)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ics の URL を追加（https:// または webcal://）"
+          }
+        }
+      }
+    },
+    "settings.planner.start" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day starts at"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示の開始"
+          }
+        }
+      }
+    },
+    "toast.subtasksDone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All subtasks done — ⌘D to finish the parent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サブタスク完了 — 親も終わったら ⌘D"
+          }
+        }
+      }
+    },
     "・%lld🍅" : {},
     "%lld/%lld" : {
       "localizations" : {
@@ -92,22 +380,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "すべて完了"
-          }
-        }
-      }
-    },
-    "toast.parentAutoCompleted" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Parent task auto-completed"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "親タスクも自動完了"
           }
         }
       }

@@ -25,6 +25,7 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
 
     let pomodoroTimer = PomodoroTimer()
     let taskListViewModel = TaskListViewModel()
+    let dayPlanner = DayPlanner()
 
     private(set) var mainWindow: NSWindow?
     private let minimalController = MinimalWindowController()
@@ -39,6 +40,7 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyPresetDurationsOnFirstLaunch()
+        dayPlanner.attach(timer: pomodoroTimer)
 
         // 初回タスク選択
         if let nextTask = taskListViewModel.taskList.nextTask {
@@ -122,8 +124,9 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
         }
 
         // 規定サイズ
-        let defaultSize = NSSize(width: 360, height: 560)
-        let minSize = NSSize(width: 320, height: 440)
+        let defaultSize = NSSize(
+            width: 360 + (isPlannerVisible ? DayPlannerPanel.width + 1 : 0), height: 600)
+        let minSize = Self.mainContentMinSize(plannerVisible: isPlannerVisible)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let initialFrame = NSRect(
             x: screen.midX - defaultSize.width / 2,
@@ -144,7 +147,8 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
 
         let view = MainContentView(
             pomodoroTimer: pomodoroTimer,
-            taskListViewModel: taskListViewModel
+            taskListViewModel: taskListViewModel,
+            dayPlanner: dayPlanner
         )
         let host = NSHostingView(rootView: view)
         win.contentView = host
@@ -170,6 +174,34 @@ final class TomadoAppDelegate: NSObject, NSApplicationDelegate, ObservableObject
         NSApp.activate(ignoringOtherApps: true)
 
         self.mainWindow = win
+    }
+
+    // MARK: - Day Planner Panel
+
+    private var isPlannerVisible: Bool {
+        UserDefaults.standard.bool(forKey: "plannerVisible")
+    }
+
+    /// 計画パネルを出している間は、その幅のぶん最小幅も広げる（一覧側が潰れないように）
+    private static func mainContentMinSize(plannerVisible: Bool) -> NSSize {
+        NSSize(width: 320 + (plannerVisible ? DayPlannerPanel.width + 1 : 0), height: 480)
+    }
+
+    /// 計画パネルの開閉に合わせてウィンドウを右へ広げる／縮める（一覧側の幅は変えない）
+    func applyPlannerWidth(visible: Bool) {
+        guard let win = mainWindow else { return }
+        let delta = (DayPlannerPanel.width + 1) * (visible ? 1 : -1)
+        let minSize = Self.mainContentMinSize(plannerVisible: visible)
+        var frame = win.frame
+        frame.size.width = max(frame.width + delta, minSize.width)
+        // 画面の右端からはみ出すなら左へずらす
+        if let screen = win.screen?.visibleFrame, frame.maxX > screen.maxX {
+            frame.origin.x = max(screen.minX, screen.maxX - frame.width)
+        }
+        win.contentMinSize = minSize
+        let titleBarHeight = win.frame.height - win.contentLayoutRect.height
+        win.minSize = NSSize(width: minSize.width, height: minSize.height + titleBarHeight)
+        win.setFrame(frame, display: true, animate: true)
     }
 
     /// メインウィンドウを完全に隠す（手動 NSWindow なので orderOut で確実に消える）

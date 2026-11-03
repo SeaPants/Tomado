@@ -214,7 +214,8 @@ class MainWindowManager: ObservableObject {
         // メインコンテンツビューを作成
         let contentView = MainContentView(
             pomodoroTimer: timer ?? PomodoroTimer(),
-            taskListViewModel: taskListViewModel
+            taskListViewModel: taskListViewModel,
+            dayPlanner: TomadoAppDelegate.shared?.dayPlanner ?? DayPlanner()
         )
 
         // HostingViewを作成

@@ -50,6 +50,7 @@ enum TomadoFormat {
 struct FocusedMainView: View {
     @ObservedObject var timer: PomodoroTimer
     @ObservedObject var taskListVM: TaskListViewModel
+    @ObservedObject var planner: DayPlanner
     @State private var newTaskText = ""
     @State private var showSettings = false
     @State private var showClearCompletedConfirm = false
@@ -64,6 +65,9 @@ struct FocusedMainView: View {
     @State private var pendingCompleteTaskId: String?  // サブタスク確認待ちの親タスクID
     @State private var pendingCompleteSubtaskCount: Int = 0
     @State private var showCompleteWithSubtasksConfirm: Bool = false
+    @State private var celebrationTrigger: Int = 0  // 完了演出の再生カウンタ
+    @State private var celebrationIsMilestone: Bool = false
+    @State private var completingTaskIds: Set<String> = []  // 横線を引いて消える直前のタスク
     @State private var inlineEdit: InlineEdit?  // 行内編集（名前変更 / サブタスク追加）
     @State private var inlineText: String = ""
     @State private var pendingDeleteTaskId: String?  // サブタスクごと削除する確認待ちのタスクID
@@ -74,6 +78,7 @@ struct FocusedMainView: View {
     @AppStorage("viewMode") private var viewMode: ViewMode = .separated  // 表示モード
     @AppStorage("timerPreset") private var timerPreset: TimerPreset = .shortFocus  // タイマープリセット
     @AppStorage("strictBreakMode") private var strictBreakMode: Bool = false  // 厳格な休憩モード
+    @AppStorage("plannerVisible") private var plannerVisible: Bool = false  // 今日の計画パネル
     @State private var breakLockSuppressedUntil: Date?  // 長押しスキップでロックを見送る区間の終わり
     @StateObject private var breakLockController = BreakLockWindowController()
     // タイマープリセット設定（カスタマイズ可能）
@@ -116,8 +121,14 @@ struct FocusedMainView: View {
     }
 
     var body: some View {
-        standardLayout
-        .frame(minWidth: 320, maxWidth: .infinity, minHeight: 440, maxHeight: .infinity)
+        HStack(spacing: 0) {
+            standardLayout
+                .frame(minWidth: 320, maxWidth: .infinity)
+            if plannerVisible {
+                DayPlannerPanel(planner: planner, taskListVM: taskListVM, onClose: togglePlanner)
+            }
+        }
+        .frame(minHeight: 480, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .animation(.easeInOut(duration: 0.25), value: timer.currentPhase)
         .onAppear {
@@ -125,12 +136,14 @@ struct FocusedMainView: View {
             updateTimerTask()
             applyWindowLevel()
             updateBreakLock()
+            planner.pruneBlocks(keepingTaskIds: Set(taskListVM.taskList.tasks.map(\.id)))
         }
         .onChange(of: taskListVM.currentTask?.id) { _, _ in
             updateTimerTask()
         }
-        .onChange(of: taskListVM.taskList.tasks) { _, _ in
+        .onChange(of: taskListVM.taskList.tasks) { _, tasks in
             updateTimerTask()
+            planner.pruneBlocks(keepingTaskIds: Set(tasks.map(\.id)))
         }
         .onChange(of: timer.currentPhase) { _, _ in
             applyWindowLevel()
@@ -271,6 +284,12 @@ struct FocusedMainView: View {
                 }
             }
             .frame(height: Self.timerBandHeight)
+            .overlay {
+                CompletionBurstView(trigger: celebrationTrigger, isMilestone: celebrationIsMilestone)
+            }
+
+            // 今日の 15 分マス。高さは固定（提案の有無で一覧との境目を動かさない）
+            DayStripView(planner: planner, taskListVM: taskListVM, onTogglePanel: togglePlanner)
 
             Divider()
 
@@ -393,7 +412,9 @@ struct FocusedMainView: View {
                     .foregroundColor(colorFor(task.priority))
                 Text(task.title)
                     .font(.system(size: 16, weight: .medium))
+                    .strikethrough(completingTaskIds.contains(task.id))
             }
+            .opacity(completingTaskIds.contains(task.id) ? 0.5 : 1)
             .multilineTextAlignment(.center)
             // 常に 2 行ぶん確保する。1 行タイトルと 2 行タイトルで帯の高さが変わると、
             // タスクを切り替えるたびにタイマーと一覧の境目が跳ねる
@@ -728,6 +749,39 @@ struct FocusedMainView: View {
         .foregroundColor(.secondary)
         .scaleEffect(isPressed ? 1.3 : 1.0)
         .animation(.easeOut(duration: 0.1), value: isPressed)
+    }
+
+    private func plannerToggleButton() -> some View {
+        Button(action: togglePlanner) {
+            Image(systemName: "calendar.day.timeline.left")
+                .font(.caption)
+                .foregroundColor(plannerVisible ? .accentColor : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: "planner.toggle"))
+    }
+
+    /// パネルは「右に引き出す」ように見せたいので、開くときと閉じるときで順番を変える
+    private func togglePlanner() {
+        if plannerVisible {
+            // 閉じる: 先にウィンドウを縮めてパネルを引っ込め、縮みきってから取り除く
+            TomadoAppDelegate.shared?.applyPlannerWidth(visible: false)
+            plannerVisible = false
+        } else {
+            // 開く: 幅 0 のパネルを先に差し込み、ウィンドウが伸びたぶんだけ右から現れるようにする。
+            // 先に伸ばすと、パネルが入るまでの間は本体が横に引き伸ばされてしまう
+            plannerVisible = true
+            DispatchQueue.main.async {
+                TomadoAppDelegate.shared?.applyPlannerWidth(visible: true)
+            }
+        }
+    }
+
+    /// 計画どおりのタスクへ切り替える（⌘J）
+    private func acceptPlanSuggestion() {
+        guard let suggestion = planner.suggestion(
+            currentTaskId: taskListVM.currentTask?.id, tasks: taskListVM.taskList.tasks) else { return }
+        taskListVM.selectTask(id: suggestion.task.id)
     }
 
     private func footerButton(
@@ -1092,6 +1146,8 @@ struct FocusedMainView: View {
                     .font(task.isRoot ? .body : .callout)
                     .foregroundColor(task.isRoot || isCurrent ? .primary : .secondary)
                     .fontWeight(isCurrent ? .medium : .regular)
+                    .strikethrough(completingTaskIds.contains(task.id))
+                    .opacity(completingTaskIds.contains(task.id) ? 0.45 : 1)
                     .lineLimit(1)
 
                 if task.notes != nil {
@@ -1370,6 +1426,8 @@ struct FocusedMainView: View {
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             minimalToggleButton()
                 .keyboardShortcut("m", modifiers: [.command, .shift])
+            plannerToggleButton()
+                .keyboardShortcut("d", modifiers: [.command, .shift])
 
             // overflow メニュー（ピン・キャプチャ・I/O・破壊系）
             moreMenuButton
@@ -1467,6 +1525,8 @@ struct FocusedMainView: View {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("") { showQuickCapture = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("") { acceptPlanSuggestion() }
+                .keyboardShortcut("j", modifiers: .command)
             Button("") { performImport() }
             // ⌘V / ⌘C は OS の貼り付け・コピーに譲る（入力欄にペーストできなくなるため）
             .keyboardShortcut("v", modifiers: [.command, .option])
@@ -1569,26 +1629,52 @@ struct FocusedMainView: View {
         }
     }
 
-    /// 実際にタスクを完了 + 親自動完了 + 次タスクへ自動遷移
+    /// 実際にタスクを完了 + 演出 + 親（サブタスク全完了時）か次タスクへ遷移
+    /// 横線を引いた姿を一拍見せてから一覧から消す。即座に消すと「片付けた」手応えが残らない
     private func performComplete(taskId: String) {
-        let parentIdBeforeCompletion = taskListVM.taskList.tasks
-            .first(where: { $0.id == taskId })?.parentId
+        guard completingTaskIds.isEmpty else { return }  // 横線を見せている間の連打は無視
+        let subtaskIds = taskListVM.getSubtaskIds(for: taskId)
+        let parentId = taskListVM.taskList.tasks.first(where: { $0.id == taskId })?.parentId
+        // 親の未完了サブタスクが「これ＋これの未完了の子」だけなら、これで親の中身が片付く
+        let isLastSubtask = parentId.map {
+            taskListVM.incompleteSubtaskCount(for: $0) == 1 + taskListVM.incompleteSubtaskCount(for: taskId)
+        } ?? false
 
-        taskListVM.completeTask(id: taskId)
-        showToast(String(localized: "toast.completed"))
-
-        // 親タスクの自動完了判定（兄弟が全完了 → 親も自動完了）
-        if let parentId = parentIdBeforeCompletion,
-           let _ = taskListVM.autoCompleteParentIfReady(for: taskId) {
-            // 親も完了したら別途トースト
-            showToast(String(localized: "toast.parentAutoCompleted"))
-            _ = parentId
+        // 手応えは押した瞬間に返す（演出と音は待たせない）
+        celebrate(milestone: !subtaskIds.isEmpty || isLastSubtask)
+        withAnimation(.easeOut(duration: 0.2)) {
+            completingTaskIds = Set([taskId] + subtaskIds)
         }
 
-        // 次タスクへ自動遷移（集中状態の維持）
-        if taskListVM.currentTaskId == nil {
-            taskListVM.advanceToNextTask()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.strikeThroughDelay) {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                taskListVM.completeTask(id: taskId)
+                completingTaskIds = []
+
+                if taskListVM.focusParentIfSubtasksDone(for: taskId) != nil {
+                    // 最後のサブタスク。親は閉じずに選び直し、仕上げるかどうかは本人に任せる
+                    showToast(String(localized: "toast.subtasksDone"))
+                } else {
+                    showToast(String(localized: "toast.completed"))
+                }
+
+                // 次タスクへ自動遷移（集中状態の維持）
+                if taskListVM.currentTaskId == nil {
+                    taskListVM.advanceToNextTask()
+                }
+            }
         }
+    }
+
+    /// 完了したタスクに横線を引いたまま見せておく時間
+    private static let strikeThroughDelay: TimeInterval = 0.5
+
+    /// 完了の演出。区切りの大きい完了（サブタスクを持つタスク・最後のサブタスク）だけ紙吹雪にして、
+    /// 毎回同じ派手さで慣れてしまわないようにする
+    private func celebrate(milestone: Bool) {
+        celebrationIsMilestone = milestone
+        celebrationTrigger += 1
+        CompletionBurstView.playSound(milestone: milestone, timer: timer)
     }
 
     private func postponeCurrentTask() {
@@ -1673,6 +1759,11 @@ struct SettingsView: View {
     @State private var timetableRatio: Int
     @State private var timetableText: String
     @State private var newTaskPlacement: String
+    @State private var plannerStartHour: Int
+    @State private var plannerEndHour: Int
+    @State private var plannerCalendarEnabled: Bool
+    @State private var plannerCalendarIds: Set<String>?  // nil = 全カレンダー
+    @State private var plannerICSURLs: [String]
 
     /// 現在選択中のプリセット（保存時に、編集されたプリセットの時間をタイマーへ反映するのに使う）
     @AppStorage("timerPreset") private var timerPreset: FocusedMainView.TimerPreset = .shortFocus
@@ -1713,6 +1804,13 @@ struct SettingsView: View {
         _timetableRatio = State(initialValue: Int(timer.timetableRatio.rounded()))
         _timetableText = State(initialValue: timer.timetable.text)
         _newTaskPlacement = State(initialValue: defaults.string(forKey: "newTaskPlacement") ?? "top")
+        _plannerStartHour = State(initialValue:
+            defaults.object(forKey: DayPlanner.startHourKey) as? Int ?? DayPlanner.defaultStartHour)
+        _plannerEndHour = State(initialValue:
+            defaults.object(forKey: DayPlanner.endHourKey) as? Int ?? DayPlanner.defaultEndHour)
+        _plannerCalendarEnabled = State(initialValue: defaults.bool(forKey: DayPlanner.calendarEnabledKey))
+        _plannerCalendarIds = State(initialValue: defaults.stringArray(forKey: DayPlanner.calendarIdsKey).map(Set.init))
+        _plannerICSURLs = State(initialValue: defaults.stringArray(forKey: DayPlanner.icsURLsKey) ?? [])
     }
 
     /// 下書きを現在値から取り直す。
@@ -1746,6 +1844,11 @@ struct SettingsView: View {
         timetableRatio = Int(timer.timetableRatio.rounded())
         timetableText = timer.timetable.text
         newTaskPlacement = defaults.string(forKey: "newTaskPlacement") ?? "top"
+        plannerStartHour = defaults.object(forKey: DayPlanner.startHourKey) as? Int ?? DayPlanner.defaultStartHour
+        plannerEndHour = defaults.object(forKey: DayPlanner.endHourKey) as? Int ?? DayPlanner.defaultEndHour
+        plannerCalendarEnabled = defaults.bool(forKey: DayPlanner.calendarEnabledKey)
+        plannerCalendarIds = defaults.stringArray(forKey: DayPlanner.calendarIdsKey).map(Set.init)
+        plannerICSURLs = defaults.stringArray(forKey: DayPlanner.icsURLsKey) ?? []
 
         initialPresetMinutes = activePresetMinutes
     }
@@ -1911,6 +2014,24 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(String(localized: "settings.planner")) {
+                    // 終わりは始まりより後だけ選べる（逆転した範囲は作らせない）
+                    Picker(String(localized: "settings.planner.start"), selection: $plannerStartHour) {
+                        ForEach(0..<24, id: \.self) { Text("\($0):00").tag($0) }
+                    }
+                    .onChange(of: plannerStartHour) { _, start in
+                        if plannerEndHour <= start { plannerEndHour = start + 1 }
+                    }
+                    Picker(String(localized: "settings.planner.end"), selection: $plannerEndHour) {
+                        ForEach((plannerStartHour + 1)...24, id: \.self) { Text("\($0):00").tag($0) }
+                    }
+                }
+
+                PlannerCalendarSettings(
+                    macEnabled: $plannerCalendarEnabled,
+                    selectedIds: $plannerCalendarIds,
+                    icsURLs: $plannerICSURLs)
+
                 Section(String(localized: "settings.tasks")) {
                     Picker(String(localized: "settings.tasks.placement"), selection: $newTaskPlacement) {
                         Text(String(localized: "settings.tasks.placement.top")).tag("top")
@@ -1976,6 +2097,15 @@ struct SettingsView: View {
     private func save() {
         let defaults = UserDefaults.standard
         defaults.set(newTaskPlacement, forKey: "newTaskPlacement")
+        defaults.set(plannerStartHour, forKey: DayPlanner.startHourKey)
+        defaults.set(plannerEndHour, forKey: DayPlanner.endHourKey)
+        defaults.set(plannerCalendarEnabled, forKey: DayPlanner.calendarEnabledKey)
+        if let ids = plannerCalendarIds {
+            defaults.set(ids.sorted(), forKey: DayPlanner.calendarIdsKey)
+        } else {
+            defaults.removeObject(forKey: DayPlanner.calendarIdsKey)
+        }
+        defaults.set(plannerICSURLs, forKey: DayPlanner.icsURLsKey)
         defaults.set(importAllowListFormat, forKey: "importAllowListFormat")
         defaults.set(indentStyle, forKey: "indentStyle")
         defaults.set(indentSpaces, forKey: "indentSpaces")
@@ -2108,6 +2238,105 @@ class ModifierKeyMonitor: ObservableObject {
 // MARK: - Quick Capture
 
 /// 集中を切らずに思考を捕捉するための軽量シート
+// MARK: - Completion Burst
+
+/// タスク完了の瞬間に一度だけ弾ける演出。trigger が変わるたびに最初から再生する
+/// 通常はチェックと緑の粒が広がるだけ、区切りの完了では色とりどりの紙吹雪が落ちる
+struct CompletionBurstView: View {
+    let trigger: Int
+    let isMilestone: Bool
+    @State private var startedAt: Date?
+
+    private var duration: TimeInterval { isMilestone ? 1.4 : 0.8 }
+    private static let confettiColors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
+
+    var body: some View {
+        TimelineView(.animation(paused: startedAt == nil)) { context in
+            Canvas { ctx, size in
+                guard let startedAt else { return }
+                let t = context.date.timeIntervalSince(startedAt) / duration
+                guard t >= 0, t < 1 else { return }
+                draw(in: &ctx, size: size, t: t)
+            }
+        }
+        .allowsHitTesting(false)
+        .onChange(of: trigger) { _, _ in
+            let start = Date()
+            startedAt = start
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                // 再生中に次の完了が来ていたら、そちらの再生を止めない
+                if startedAt == start { startedAt = nil }
+            }
+        }
+    }
+
+    private func draw(in ctx: inout GraphicsContext, size: CGSize, t: Double) {
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        // ミニマル窓のような小さい枠でも収まるよう、タイマー帯（約 240pt）を基準に縮める
+        let k = min(1, min(size.width, size.height) / 220)
+        let easeOut = 1 - pow(1 - t, 3)
+        let fade = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4
+
+        // 広がるリング
+        let ringRadius = (24 + 56 * easeOut) * k
+        ctx.stroke(
+            Path(ellipseIn: CGRect(
+                x: center.x - ringRadius, y: center.y - ringRadius,
+                width: ringRadius * 2, height: ringRadius * 2)),
+            with: .color(.green.opacity(0.5 * (1 - t))),
+            lineWidth: 2
+        )
+
+        // 粒（決定的な擬似乱数で毎回同じ形に散らす）
+        let count = isMilestone ? 40 : 14
+        for i in 0..<count {
+            let r1 = Self.noise(i, 1), r2 = Self.noise(i, 2)
+            let angle = Double(i) / Double(count) * 2 * .pi + r1 * 0.5
+            let reach = (isMilestone ? 120 : 70) * (0.6 + 0.4 * r2) * easeOut * k
+            // 紙吹雪だけ重力で落とす
+            let gravity = isMilestone ? 90 * t * t * k : 0
+            let p = CGPoint(x: center.x + cos(angle) * reach, y: center.y + sin(angle) * reach + gravity)
+            let color = isMilestone ? Self.confettiColors[i % Self.confettiColors.count] : .green
+            if isMilestone {
+                var piece = ctx
+                piece.translateBy(x: p.x, y: p.y)
+                piece.rotate(by: .radians(angle + t * 8 * (r1 - 0.5)))
+                piece.scaleBy(x: k, y: k)
+                piece.fill(Path(CGRect(x: -3, y: -1.5, width: 6, height: 3)), with: .color(color.opacity(fade)))
+            } else {
+                let d = 4 * (1 - t) * k
+                ctx.fill(Path(ellipseIn: CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)),
+                         with: .color(color.opacity(0.8 * fade)))
+            }
+        }
+
+        // 中央のチェック: 小さく出て一瞬大きくなり、落ち着いてから消える
+        let pop = t < 0.25 ? 0.4 + 0.8 * (t / 0.25) : 1.2 - 0.2 * min(1, (t - 0.25) / 0.2)
+        var check = ctx
+        check.opacity = fade
+        check.translateBy(x: center.x, y: center.y)
+        check.scaleBy(x: pop * k, y: pop * k)
+        let symbol = check.resolve(
+            Text(Image(systemName: "checkmark.circle.fill"))
+                .font(.system(size: 44))
+                .foregroundColor(.green))
+        check.draw(symbol, at: .zero, anchor: .center)
+    }
+
+    /// 完了音。タイマーのサウンド設定（オン/オフ・音量）に従う
+    @MainActor
+    static func playSound(milestone: Bool, timer: PomodoroTimer) {
+        guard timer.soundEnabled, let sound = NSSound(named: milestone ? "Glass" : "Pop") else { return }
+        sound.volume = Float(timer.soundVolume)
+        sound.play()
+    }
+
+    private static func noise(_ i: Int, _ salt: Int) -> Double {
+        let x = sin(Double(i * 127 + salt * 311)) * 43758.5453
+        return x - floor(x)
+    }
+}
+
 struct QuickCaptureView: View {
     @Binding var text: String
     let onSave: () -> Void
@@ -2560,6 +2789,8 @@ struct MinimalTimerView: View {
     let onExit: () -> Void
 
     @State private var hovering: Bool = false
+    @State private var celebrationTrigger: Int = 0
+    @State private var celebrationIsMilestone: Bool = false
     @AppStorage("minimalIsPinned") private var isPinned: Bool = true
 
     private var phaseColor: Color {
@@ -2702,6 +2933,8 @@ struct MinimalTimerView: View {
             }
             .padding(6)
 
+            CompletionBurstView(trigger: celebrationTrigger, isMilestone: celebrationIsMilestone)
+
             // キーボードショートカット (非表示ボタン)
             minimalShortcuts
         }
@@ -2712,6 +2945,12 @@ struct MinimalTimerView: View {
 
     private func togglePin() {
         isPinned.toggle()
+    }
+
+    private func celebrate(milestone: Bool) {
+        celebrationIsMilestone = milestone
+        celebrationTrigger += 1
+        CompletionBurstView.playSound(milestone: milestone, timer: timer)
     }
 
     private func applyPinState() {
@@ -2741,8 +2980,10 @@ struct MinimalTimerView: View {
             Button("") {
                 // ミニマル時は集中保護のためモーダル無しでカスケード完了 + 自動遷移
                 if let task = taskListVM.currentTask {
+                    let hadSubtasks = taskListVM.subtaskCount(for: task.id) > 0
                     taskListVM.completeTask(id: task.id)
-                    _ = taskListVM.autoCompleteParentIfReady(for: task.id)
+                    let backToParent = taskListVM.focusParentIfSubtasksDone(for: task.id) != nil
+                    celebrate(milestone: hadSubtasks || backToParent)
                     if taskListVM.currentTaskId == nil {
                         taskListVM.advanceToNextTask()
                     }

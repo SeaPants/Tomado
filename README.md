@@ -25,11 +25,13 @@ A minimalist Pomodoro timer with task management for macOS.
 - **Task Notes**: Attach context to a task via indented bullets (`-` lines under a task)
 - **Right-Click Menu**: Rename a task or add a subtask right in the row (Enter to save, Esc to cancel)
 - **Subtasks**: Organize tasks hierarchically with drag & drop — drop onto a row to nest it, drop onto the line between rows (or below the list) to pull it back out
-- **Auto-cascade**: Confirmation modal when completing a parent with incomplete subtasks; auto-completes parent when all subtasks done; auto-advances to next task on completion
+- **Auto-cascade**: Confirmation modal when completing a parent with incomplete subtasks; when the last subtask is done, focus returns to the parent so you decide when it is finished; otherwise auto-advances to the next task
 - **View Modes**: Toggle between separated view and hierarchy view
 - **Minimal Mode**: Compact floating window showing only the timer — small, draggable, optionally always-on-top
 - **Strict Break**: Optional fullscreen break overlay with rotating wellness reminders, hold-to-skip
 - **Quick Capture**: Capture stray thoughts mid-focus without breaking flow (⌘⇧I)
+- **Day Plan**: A strip of today's 15-minute boxes under the timer (light = planned, solid = worked). Open the side panel (⌘⇧D) and drag tasks onto the timeline; drag a block to move it, drag its bottom edge to resize, drag it sideways out of the timeline to remove it. Optionally show calendar events as busy so you plan only into free time: pick which Mac calendars to read, and/or add ics URLs (Settings → Busy Time). The hours shown are set in Settings → Day Plan. When a planned block starts, Tomado suggests switching to it (⌘J) without changing your task on its own
+- **Completion Burst**: A small check-and-sparkle on completion, with confetti for bigger wins (finishing a task with subtasks, or the last subtask)
 - **Keyboard-First**: Comprehensive keyboard shortcuts for all actions
 - **Import/Export**: Markdown-based clipboard import/export with hierarchy and notes
 - **Localization**: English and Japanese support
@@ -54,6 +56,8 @@ A minimalist Pomodoro timer with task management for macOS.
 | ⌘⇧S | Sort by priority |
 | ⌘⇧P | Toggle topmost |
 | ⌘⇧I | Quick Capture (capture without breaking focus) |
+| ⌘⇧D | Toggle day plan panel |
+| ⌘J | Switch to the planned task |
 | ⌘⌫ | Delete completed tasks |
 | ⌘⇧⌫ | Delete all tasks |
 | ⌘⌥V | Import from clipboard |
@@ -205,11 +209,13 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 - **タスク管理**: 優先度付き（!, !!, !!!）のシンプルなタスクリスト
 - **タスクメモ**: タスク配下のインデント `-` 行を文脈メモとして保持
 - **サブタスク**: ドラッグ＆ドロップで階層的にタスクを整理。行の上に落とすとサブタスク化、行間のラインやリスト下端に落とすとその階層に引き上げ
-- **自動カスケード**: 親タスク完了時に未完了サブタスクがあれば確認モーダル。全サブタスク完了時は親も自動完了。完了後は次の未完了タスクへ自動遷移
+- **自動カスケード**: 親タスク完了時に未完了サブタスクがあれば確認モーダル。最後のサブタスクを終えると親へ戻る（親の完了は自分で ⌘D）。それ以外は次の未完了タスクへ自動遷移
 - **ビューモード**: 分離ビューと階層ビューを切り替え
 - **ミニマルモード**: タイマーだけの小さな浮遊ウィンドウ。ドラッグ移動可、最前面固定オプション
 - **厳格な休憩**: 休憩中に全画面オーバーレイ + ローテーションするウェルネス提示 + 長押しスキップ
 - **クイックキャプチャ**: 集中を切らずに浮かんだ思考を即座に記録 (⌘⇧I)
+- **今日の計画**: タイマーの下に今日を 15 分マスで表示（薄い色が計画、濃い色が実績）。サイドパネル (⌘⇧D) にタスクをドラッグして時間を割り当て、ブロックはドラッグで移動、下端で長さを変更、横に引きずり出すと削除。オプションでカレンダーの予定を埋まりとして表示し、空き時間だけに計画できる。読む Mac のカレンダーはチェックで選べ、ics の URL も追加できる（設定 → 予定で埋める）。表示する時間帯は 設定 → 今日の計画 で選ぶ。計画の時刻になると切り替えを提案 (⌘J)。勝手には切り替えない
+- **完了の演出**: 完了時にチェックと粒が弾ける。サブタスク付きのタスクや最後のサブタスクを終えたときは紙吹雪
 - **キーボード操作**: すべての操作にショートカットキー対応
 - **インポート/エクスポート**: Markdown 形式でクリップボード経由 (階層 + メモ対応)
 - **多言語対応**: 英語・日本語に対応
@@ -234,6 +240,8 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 | ⌘⇧S | 優先度順にソート |
 | ⌘⇧P | 最前面固定切替 |
 | ⌘⇧I | クイックキャプチャ (集中を切らずに記録) |
+| ⌘⇧D | 今日の計画パネル切替 |
+| ⌘J | 計画中のタスクへ切り替え |
 | ⌘⌫ | 完了タスクを削除 |
 | ⌘⇧⌫ | すべてのタスクを削除 |
 | ⌘⌥V | クリップボードからインポート |

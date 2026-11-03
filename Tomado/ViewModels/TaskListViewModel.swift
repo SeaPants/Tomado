@@ -220,7 +220,7 @@ public class TaskListViewModel: ObservableObject {
     }
 
     /// 指定タスクのサブタスクIDを再帰的に取得
-    private func getSubtaskIds(for parentId: String) -> [String] {
+    public func getSubtaskIds(for parentId: String) -> [String] {
         var result: [String] = []
         let directChildren = taskList.tasks.filter { $0.parentId == parentId }
         for child in directChildren {
@@ -951,26 +951,20 @@ public class TaskListViewModel: ObservableObject {
         }
     }
 
-    /// 親タスクが存在し、その親の全サブタスクが完了したら親も自動完了
-    /// 完了されたタスクのID（あれば）を返す
+    /// 直近の親の全サブタスクが完了したら、親を現在のタスクに選び直す（完了はさせない）
+    /// 親には「まとめ」「提出」のようなサブタスクに切り出していない仕上げが残りがちなので、
+    /// 自動で閉じて次へ飛ばすより、親へ戻して完了するかどうかを本人に委ねる
+    /// - Returns: 選び直した親のID（あれば）
     @discardableResult
-    public func autoCompleteParentIfReady(for taskId: String) -> String? {
+    public func focusParentIfSubtasksDone(for taskId: String) -> String? {
         guard let task = taskList.tasks.first(where: { $0.id == taskId }),
               let parentId = task.parentId,
-              let parentIndex = taskList.tasks.firstIndex(where: { $0.id == parentId }),
-              !taskList.tasks[parentIndex].isCompleted,
+              let parent = taskList.tasks.first(where: { $0.id == parentId }),
+              !parent.isCompleted,
               areAllSubtasksCompleted(for: parentId) else {
             return nil
         }
-        // 親を完了
-        taskList.tasks[parentIndex].isCompleted = true
-        // 親も含めて末尾に並べ替え
-        let parentTask = taskList.tasks.remove(at: parentIndex)
-        taskList.tasks.append(parentTask)
-        taskList.lastModified = Date()
-        save()
-        // 再帰的に祖父も判定
-        autoCompleteParentIfReady(for: parentId)
+        currentTaskId = parentId
         return parentId
     }
 
