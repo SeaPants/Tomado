@@ -38,7 +38,7 @@ A minimalist Pomodoro timer with task management for macOS.
 
 ## Screenshot
 
-<img src="docs/screenshot.png" width="320" alt="Tomado">
+<img src="docs/screenshot.png" width="540" alt="Tomado">
 
 ## Keyboard Shortcuts
 
@@ -222,7 +222,7 @@ macOS向けのミニマリストなポモドーロタイマー＆タスク管理
 
 ## スクリーンショット
 
-<img src="docs/screenshot.png" width="320" alt="Tomado">
+<img src="docs/screenshot.png" width="540" alt="Tomado">
 
 ## キーボードショートカット
 
