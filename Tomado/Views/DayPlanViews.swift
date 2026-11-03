@@ -146,14 +146,15 @@ struct DayPlannerPanel: View {
         self.taskListVM = taskListVM
         self.onClose = onClose
         // 前回閉じたときの位置。このセッションで初めて開くなら、今の少し前から
-        _topSlot = State(initialValue:
-            planner.panelTopSlot ?? max(planner.visibleSlots.lowerBound, planner.currentSlot - 4))
+        initialTopSlot = planner.panelTopSlot ?? max(planner.visibleSlots.lowerBound, planner.currentSlot - 4)
     }
     private static let labelWidth: CGFloat = 34
     /// ブロックを横にこれだけ引きずり出したら「外へ捨てる」とみなす
     private static let discardDistance: CGFloat = 70
 
-    @State private var topSlot: Int?  // いま一番上に見えているマス
+    private let initialTopSlot: Int  // 開いたときに一番上に出すマス
+    @State private var topSlot: Int?  // いま一番上に見えているマス（スクロールの追跡用）
+    private static let verticalPadding: CGFloat = 6
     @State private var isDropTargeted = false
     @State private var dragOffset: [String: CGSize] = [:]  // 移動中ブロックのずれ
     @State private var resizeOffset: [String: CGFloat] = [:]  // 伸縮中ブロックの長さの変化
@@ -180,14 +181,31 @@ struct DayPlannerPanel: View {
         VStack(spacing: 0) {
             header
             Divider()
-            // 開いた瞬間から前回の位置で出す（開いてから scrollTo すると、先頭から動いて見える）
-            ScrollView {
-                timeline
-                    .padding(.vertical, 6)
+            // 開いた瞬間から前回の位置で出す。開いてから scrollTo すると先頭から動いて見え、
+            // scrollPosition(id:) の初期値は（Lazy でないスタックでは）効かないので、
+            // 初期位置は defaultScrollAnchor で決める。scrollPosition は位置を覚えるためだけに使う
+            GeometryReader { geo in
+                ScrollView {
+                    timeline
+                        .padding(.vertical, Self.verticalPadding)
+                }
+                .defaultScrollAnchor(initialAnchor(viewportHeight: geo.size.height))
+                .scrollPosition(id: $topSlot, anchor: .top)
+                .onChange(of: topSlot) { _, slot in
+                    if let slot { planner.panelTopSlot = slot }
+                }
             }
-            .scrollPosition(id: $topSlot, anchor: .top)
-            .onChange(of: topSlot) { _, slot in planner.panelTopSlot = slot }
         }
+    }
+
+    /// initialTopSlot が一番上に来る anchor。anchor の y は「スクロールできる量のうちどこか」の割合
+    private func initialAnchor(viewportHeight: CGFloat) -> UnitPoint {
+        let range = planner.visibleSlots
+        let contentHeight = CGFloat(range.count) * Self.rowHeight + Self.verticalPadding * 2
+        let scrollable = contentHeight - viewportHeight
+        guard scrollable > 0 else { return .top }
+        let offset = CGFloat(initialTopSlot - range.lowerBound) * Self.rowHeight
+        return UnitPoint(x: 0, y: min(1, max(0, offset / scrollable)))
     }
 
     private var header: some View {
