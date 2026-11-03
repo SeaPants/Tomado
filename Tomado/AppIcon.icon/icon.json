@@ -1,0 +1,74 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "srgb:0.79216,0.71765,0.73725,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "solid": "srgb:0.22745,0.20784,0.20392,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Tomato",
+      "layers": [
+        {
+          "image-name": "Foreground.svg",
+          "name": "Foreground"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "Background",
+      "layers": [
+        {
+          "name": "Background",
+          "glass": false,
+          "image-name-specializations": [
+            {
+              "value": "Background.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "Background-dark.svg"
+            }
+          ],
+          "hidden-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
